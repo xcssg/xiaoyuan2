@@ -1,0 +1,22 @@
+[Unit]
+Description=Wszz Wall API
+After=network.target
+
+[Service]
+Type=simple
+User=wszz
+Group=wszz
+WorkingDirectory=/opt/wszz-wall
+EnvironmentFile=/etc/wszz-wall.env
+ExecStart=/usr/local/bin/node src/index.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/wszz-wall
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
