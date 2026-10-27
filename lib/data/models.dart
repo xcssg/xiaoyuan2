@@ -37,6 +37,8 @@ class AppUser {
     required this.avatar,
     required this.bio,
     required this.joinedAt,
+    this.avatarUrl = '',
+    this.avatarStatus = 'none',
     this.realName = '',
     this.className = '',
     this.showProfile = false,
@@ -59,6 +61,8 @@ class AppUser {
   int avatar;
   String bio;
   int joinedAt;
+  String avatarUrl;
+  String avatarStatus;
   String realName;
   String className;
   bool showProfile;
@@ -83,6 +87,8 @@ class AppUser {
         avatar: json['avatar'] as int? ?? 0,
         bio: json['bio'] as String? ?? '',
         joinedAt: json['joinedAt'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+        avatarUrl: json['avatarUrl'] as String? ?? '',
+        avatarStatus: json['avatarStatus'] as String? ?? 'none',
         realName: json['realName'] as String? ?? '',
         className: json['className'] as String? ?? '',
         showProfile: json['showProfile'] as bool? ?? false,
@@ -106,6 +112,8 @@ class AppUser {
         'avatar': avatar,
         'bio': bio,
         'joinedAt': joinedAt,
+        'avatarUrl': avatarUrl,
+        'avatarStatus': avatarStatus,
         'realName': realName,
         'className': className,
         'showProfile': showProfile,
@@ -302,6 +310,9 @@ class Post {
     required this.comments,
     required this.createdAt,
     this.deleted = false,
+    this.imageUrl = '',
+    this.status = 'approved',
+    this.rejectReason = '',
   });
 
   final String id;
@@ -315,6 +326,9 @@ class Post {
   final List<PostComment> comments;
   final int createdAt;
   bool deleted;
+  String imageUrl;
+  String status;
+  String rejectReason;
 
   factory Post.fromJson(Map<String, dynamic> json) => Post(
         id: json['id'] as String,
@@ -330,6 +344,9 @@ class Post {
             .toList(),
         createdAt: json['createdAt'] as int? ?? DateTime.now().millisecondsSinceEpoch,
         deleted: json['deleted'] as bool? ?? false,
+        imageUrl: json['imageUrl'] as String? ?? '',
+        status: json['status'] as String? ?? 'approved',
+        rejectReason: json['rejectReason'] as String? ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -344,6 +361,9 @@ class Post {
         'comments': comments.map((e) => e.toJson()).toList(),
         'createdAt': createdAt,
         'deleted': deleted,
+        'imageUrl': imageUrl,
+        'status': status,
+        'rejectReason': rejectReason,
       };
 }
 

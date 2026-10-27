@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../app_state.dart';
 import '../data/models.dart';
@@ -21,12 +24,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _realName;
   late final TextEditingController _className;
   late final TextEditingController _bio;
-  late int _avatar;
   late bool _showProfile;
   String _frameId = '';
   String _colorId = '';
   String _title = '';
   bool _saving = false;
+  bool _uploading = false;
 
   @override
   void initState() {
@@ -38,7 +41,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _realName = TextEditingController(text: _user.realName);
     _className = TextEditingController(text: _user.className);
     _bio = TextEditingController(text: _user.bio);
-    _avatar = _user.avatar;
     _showProfile = _user.showProfile;
     _frameId = _user.equippedFrameId;
     _colorId = _user.equippedColorId;
@@ -76,7 +78,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         className: _className.text.trim(),
         bio: _bio.text.trim(),
         showProfile: _showProfile,
-        avatar: _avatar,
+        avatar: _user.avatar,
         equippedFrameId: _frameId,
         equippedColorId: _colorId,
         title: _title,
@@ -87,6 +89,41 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } on StoreException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Future<void> _pickAvatar() async {
+    if (_uploading) return;
+    final app = AppScope.of(context);
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 720,
+      imageQuality: 82,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (bytes.length > 3 * 1024 * 1024) {
+      if (!mounted) return;
+      app.toast('图片不能超过 3MB', type: ToastType.error);
+      return;
+    }
+    final name = picked.name.toLowerCase();
+    final ext = name.endsWith('.png')
+        ? 'png'
+        : name.endsWith('.webp')
+            ? 'webp'
+            : 'jpeg';
+    final dataUrl = 'data:image/$ext;base64,${base64Encode(bytes)}';
+    setState(() => _uploading = true);
+    try {
+      await _store.uploadAvatar(dataUrl);
+      if (!mounted) return;
+      setState(() => _uploading = false);
+      app.toast('头像已提交，等待管理员审核', type: ToastType.success);
+    } on StoreException catch (e) {
+      if (!mounted) return;
+      setState(() => _uploading = false);
       app.toast(e.message, type: ToastType.error);
     }
   }
@@ -107,9 +144,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
     final frameValue = _valueOfItem(_frameId);
     final colorValue = _valueOfItem(_colorId);
-    final previewJson = _user.toJson();
-    previewJson['nickname'] = _nickname.text.trim().isEmpty ? _user.nickname : _nickname.text.trim();
-    previewJson['avatar'] = _avatar;
+    final live = _store.current ?? _user;
+    final previewJson = live.toJson();
+    previewJson['nickname'] = _nickname.text.trim().isEmpty ? live.nickname : _nickname.text.trim();
     previewJson['avatarFrame'] = frameValue;
     previewJson['nameColor'] = colorValue;
     previewJson['title'] = _title;
@@ -166,7 +203,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                         if (_title.isNotEmpty) ...[
                           const SizedBox(width: 6),
-                          QTitleBadge(title: _title),
+                          QTitleBadge(
+                            title: _title,
+                            granted: _user.grantedTitle.isNotEmpty &&
+                                _title == _user.grantedTitle,
+                          ),
                         ],
                       ],
                     ),
@@ -181,33 +222,53 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              _SectionLabel('选择头像'),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (var i = 0; i < 6; i++)
-                    Pressable(
-                      onTap: () => setState(() => _avatar = i),
-                      scale: .94,
-                      child: Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: t.avatarGradients[i],
-                          border: Border.all(
-                            color: _avatar == i ? t.brand : Colors.white.withOpacity(.3),
-                            width: _avatar == i ? 2.5 : 1,
+              _SectionLabel('头像'),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: t.border),
+                ),
+                child: Row(
+                  children: [
+                    QAvatar(user: _store.current ?? _user, size: 50),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '从相册选择头像',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: t.text,
+                            ),
                           ),
-                          boxShadow: _avatar == i ? t.brandShadow : null,
-                        ),
-                        child: _avatar == i
-                            ? const Icon(Icons.check_rounded, size: 19, color: Colors.white)
-                            : null,
+                          const SizedBox(height: 3),
+                          Text(
+                            switch ((_store.current ?? _user).avatarStatus) {
+                              'pending' => '新头像审核中，通过后自动生效',
+                              'rejected' => '上次上传未通过，请重新选择',
+                              _ => '上传后需管理员审核通过才生效',
+                            },
+                            style: TextStyle(fontSize: 10.5, color: t.text3),
+                          ),
+                        ],
                       ),
                     ),
-                ],
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 90,
+                      child: QButton(
+                        label: _uploading ? '提交中…' : '选择图片',
+                        height: 34,
+                        onTap: _uploading ? null : _pickAvatar,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 18),
               _SectionLabel('昵称'),

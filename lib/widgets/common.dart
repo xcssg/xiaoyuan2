@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_state.dart';
+import '../config.dart';
 import '../data/models.dart';
 import '../data/store.dart';
 import '../theme/q_colors.dart';
 import '../theme/q_utils.dart';
+
+String qImageUrl(String path) =>
+    path.isEmpty ? '' : (path.startsWith('http') ? path : '$kApiBaseUrl$path');
 
 /* ============================================================
    背景
@@ -224,24 +228,39 @@ class QAvatar extends StatelessWidget {
     final frameStyle = anonymous ? '' : (frame ?? user?.avatarFrame ?? '');
     final hasFrame = frameStyle.isNotEmpty;
     final innerSize = hasFrame ? size - 5 : size;
+    final rawUrl = anonymous ? '' : (user?.avatarUrl ?? '');
+    final photoUrl = rawUrl.isEmpty
+        ? ''
+        : (rawUrl.startsWith('http') ? rawUrl : '$kApiBaseUrl$rawUrl');
+
+    final initialText = Text(
+      initial,
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: innerSize * .4,
+        fontWeight: FontWeight.w600,
+      ),
+    );
 
     final avatar = Container(
       width: innerSize,
       height: innerSize,
       alignment: Alignment.center,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: t.avatarGradients[idx],
         border: Border.all(color: Colors.white.withOpacity(.28)),
       ),
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: innerSize * .4,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+      child: photoUrl.isEmpty
+          ? initialText
+          : Image.network(
+              photoUrl,
+              width: innerSize,
+              height: innerSize,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => initialText,
+            ),
     );
 
     if (!hasFrame) return avatar;
@@ -283,36 +302,47 @@ LinearGradient _frameRing(String frame) {
 }
 
 class QTitleBadge extends StatelessWidget {
-  const QTitleBadge({super.key, required this.title});
+  const QTitleBadge({super.key, required this.title, this.granted = false});
 
   final String title;
+  final bool granted;
 
   @override
   Widget build(BuildContext context) {
     if (title.isEmpty) return const SizedBox.shrink();
+    final t = QColors.of(context);
     return Container(
       constraints: const BoxConstraints(maxWidth: 96),
-      height: 18,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
+      height: 17,
+      padding: EdgeInsets.symmetric(horizontal: granted ? 6 : 7),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFFFFF3C4), Color(0xFFFFE08A)]),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFFF5B301).withOpacity(.45)),
+        gradient: granted
+            ? const LinearGradient(colors: [Color(0xFFFFF3C4), Color(0xFFFFE08A)])
+            : null,
+        color: granted ? null : t.brand.withOpacity(t.dark ? .18 : .10),
+        borderRadius: BorderRadius.circular(8.5),
+        border: Border.all(
+          color: granted
+              ? const Color(0xFFF5B301).withOpacity(.45)
+              : t.brand.withOpacity(.22),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.workspace_premium_rounded, size: 10, color: Color(0xFFB45309)),
-          const SizedBox(width: 3),
+          if (granted) ...[
+            const Icon(Icons.workspace_premium_rounded, size: 9.5, color: Color(0xFFB45309)),
+            const SizedBox(width: 3),
+          ],
           Flexible(
             child: Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF8A4B08),
+                fontWeight: FontWeight.w600,
+                color: granted ? const Color(0xFF8A4B08) : t.brand,
                 height: 1,
               ),
             ),
@@ -1176,7 +1206,11 @@ class QPostCard extends StatelessWidget {
                           ],
                           if (!post.anonymous && author != null && author.title.isNotEmpty) ...[
                             const SizedBox(width: 5),
-                            QTitleBadge(title: author.title),
+                            QTitleBadge(
+                              title: author.title,
+                              granted: author.grantedTitle.isNotEmpty &&
+                                  author.title == author.grantedTitle,
+                            ),
                           ],
                         ],
                       ),
@@ -1232,6 +1266,13 @@ class QPostCard extends StatelessWidget {
                 color: t.text,
               ),
             ),
+            if (post.status != 'approved') ...[
+              const SizedBox(height: 6),
+              QPill(
+                text: post.status == 'pending' ? '审核中' : '未通过',
+                style: post.status == 'pending' ? QPillStyle.soft : QPillStyle.danger,
+              ),
+            ],
             const SizedBox(height: 5),
             Text(
               post.content.replaceAll('\n', ' '),
@@ -1243,6 +1284,19 @@ class QPostCard extends StatelessWidget {
                 color: t.text2,
               ),
             ),
+            if (post.imageUrl.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.network(
+                  qImageUrl(post.imageUrl),
+                  width: double.infinity,
+                  height: 150,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Container(height: 1, color: t.line),
             const SizedBox(height: 10),

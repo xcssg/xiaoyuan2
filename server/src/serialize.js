@@ -49,6 +49,9 @@ function postJson(row, currentUserId) {
     comments,
     createdAt: row.created_at,
     deleted: !!row.deleted,
+    imageUrl: row.image_url || '',
+    status: row.status || 'approved',
+    rejectReason: row.reject_reason || '',
   };
 }
 

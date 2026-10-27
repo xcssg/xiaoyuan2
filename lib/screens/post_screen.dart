@@ -190,7 +190,11 @@ class _PostScreenState extends State<PostScreen> {
                                   ],
                                   if (!post.anonymous && author != null && author.title.isNotEmpty) ...[
                                     const SizedBox(width: 5),
-                                    QTitleBadge(title: author.title),
+                                    QTitleBadge(
+                                      title: author.title,
+                                      granted: author.grantedTitle.isNotEmpty &&
+                                          author.title == author.grantedTitle,
+                                    ),
                                   ],
                                 ],
                               ),
@@ -265,6 +269,26 @@ class _PostScreenState extends State<PostScreen> {
                         ),
                       ),
                     ],
+                    if (post.status != 'approved') ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: (post.status == 'pending' ? t.warn : t.danger).withOpacity(.1),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text(
+                          post.status == 'pending'
+                              ? '帖子正在等待管理员审核，通过后会展示给其他同学'
+                              : '帖子未通过审核：${post.rejectReason.isEmpty ? '内容不符合社区规范' : post.rejectReason}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.5,
+                            color: post.status == 'pending' ? t.warn : t.danger,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     Text(
                       post.content,
@@ -274,6 +298,18 @@ class _PostScreenState extends State<PostScreen> {
                         color: t.text,
                       ),
                     ),
+                    if (post.imageUrl.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.network(
+                          qImageUrl(post.imageUrl),
+                          width: double.infinity,
+                          fit: BoxFit.fitWidth,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Wrap(
                       spacing: 7,
@@ -534,7 +570,11 @@ class _CommentTile extends StatelessWidget {
                     ),
                     if (user != null && user.title.isNotEmpty) ...[
                       const SizedBox(width: 5),
-                      QTitleBadge(title: user.title),
+                      QTitleBadge(
+                        title: user.title,
+                        granted: user.grantedTitle.isNotEmpty &&
+                            user.title == user.grantedTitle,
+                      ),
                     ],
                     const SizedBox(width: 7),
                     Text(

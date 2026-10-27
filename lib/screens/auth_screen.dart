@@ -178,7 +178,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                         const SizedBox(height: 1),
                         Text(
-                          'CAMPUS WALL',
+                          'UVSS',
                           style: TextStyle(
                             fontSize: 9.5,
                             color: t.text3,

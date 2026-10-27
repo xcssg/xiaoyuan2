@@ -164,7 +164,7 @@ class _SplashScreen extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              'CAMPUS WALL',
+              'UVSS',
               style: TextStyle(
                 fontSize: 9.5,
                 color: t.text3,
@@ -378,7 +378,6 @@ class _RootShellState extends State<RootShell> {
                     layoutBuilder: (current, previous) => Stack(
                       fit: StackFit.expand,
                       children: [
-                        ...previous,
                         if (current != null) current,
                       ],
                     ),
@@ -393,7 +392,7 @@ class _RootShellState extends State<RootShell> {
                           ).animate(curved),
                           child: ScaleTransition(
                             scale: Tween<double>(begin: .985, end: 1).animate(curved),
-                            child: child,
+                            child: ColoredBox(color: t.bg, child: child),
                           ),
                         ),
                       );

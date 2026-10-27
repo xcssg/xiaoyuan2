@@ -709,17 +709,158 @@ class _ContentTab extends StatefulWidget {
 
 class _ContentTabState extends State<_ContentTab> {
   late final TextEditingController _controller;
+  List<Post> _pending = [];
+  bool _pendingLoading = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialQuery);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPending());
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPending() async {
+    final app = AppScope.of(context);
+    setState(() => _pendingLoading = true);
+    try {
+      final list = await app.store.pendingPosts();
+      if (!mounted) return;
+      setState(() {
+        _pending = list;
+        _pendingLoading = false;
+      });
+    } on StoreException {
+      if (!mounted) return;
+      setState(() => _pendingLoading = false);
+    }
+  }
+
+  Future<void> _approve(Post post) async {
+    final app = AppScope.of(context);
+    try {
+      await app.store.reviewPost(post.id, approve: true);
+      app.toast('已通过审核', type: ToastType.success);
+      await _loadPending();
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Future<void> _reject(Post post) async {
+    final app = AppScope.of(context);
+    final data = await showQForm(
+      context,
+      title: '填写不通过原因',
+      desc: '原因会通过消息发送给发帖同学。',
+      fields: [
+        QFormFieldSpec(
+          name: 'reason',
+          label: '不通过原因',
+          hint: '例如：内容与本吧主题无关',
+          minLength: 2,
+          maxLength: 60,
+        ),
+      ],
+      confirmText: '提交',
+    );
+    if (data == null || !mounted) return;
+    try {
+      await app.store.reviewPost(post.id, approve: false, reason: data['reason'] ?? '');
+      app.toast('已通知发帖同学', type: ToastType.success);
+      await _loadPending();
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Widget _pendingCard(Post post) {
+    final t = QColors.of(context);
+    final store = AppScope.of(context).store;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: t.warn.withOpacity(.35)),
+        boxShadow: t.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const QPill(text: '待审核', style: QPillStyle.soft),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  post.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: t.text),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${store.getUser(post.authorId)?.nickname ?? '已注销'} · ${store.bar(post.barId)?.name ?? '未知贴吧'} · ${timeAgo(post.createdAt)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 10.5, color: t.text3),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            post.content.replaceAll('\n', ' '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, height: 1.5, color: t.text2),
+          ),
+          if (post.imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                qImageUrl(post.imageUrl),
+                width: double.infinity,
+                height: 120,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ],
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              _TinyButton(
+                icon: Icons.check_rounded,
+                label: '通过',
+                onTap: () => _approve(post),
+              ),
+              const SizedBox(width: 7),
+              _TinyButton(
+                icon: Icons.close_rounded,
+                label: '不通过',
+                danger: true,
+                onTap: () => _reject(post),
+              ),
+              const SizedBox(width: 7),
+              _TinyButton(
+                icon: Icons.visibility_outlined,
+                label: '查看',
+                onTap: () => widget.onOpenPost(post.id),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _delete(Post post) async {
@@ -781,6 +922,28 @@ class _ContentTabState extends State<_ContentTab> {
           ],
         ),
         const SizedBox(height: 12),
+        if (_pendingLoading)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+        if (_pending.isNotEmpty) ...[
+          Row(
+            children: [
+              Text(
+                '待审核帖子',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: t.text),
+              ),
+              const SizedBox(width: 6),
+              QPill(text: '${_pending.length}', style: QPillStyle.soft),
+              const Spacer(),
+              QTextButton(label: '刷新', onTap: _loadPending),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final post in _pending) _pendingCard(post),
+          const SizedBox(height: 3),
+        ],
         SizedBox(
           height: 38,
           child: ListView(
@@ -917,11 +1080,14 @@ class _UsersTab extends StatefulWidget {
 
 class _UsersTabState extends State<_UsersTab> {
   late final TextEditingController _controller;
+  List<Map<String, dynamic>> _avatars = [];
+  bool _loadingAvatars = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialQuery);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAvatars());
   }
 
   @override
@@ -1005,6 +1171,138 @@ class _UsersTabState extends State<_UsersTab> {
     }
   }
 
+  Future<void> _adjustPoints(AppUser user) async {
+    final app = AppScope.of(context);
+    final data = await showQForm(
+      context,
+      title: '调整积分',
+      desc: '「${user.nickname}」当前 ${user.points} 积分。正数为增加，负数为扣减。',
+      fields: const [
+        QFormFieldSpec(
+          name: 'delta',
+          label: '积分变动',
+          hint: '例如 50 或 -20',
+          minLength: 1,
+          maxLength: 6,
+        ),
+      ],
+      confirmText: '确认调整',
+    );
+    if (data == null || !mounted) return;
+    final delta = int.tryParse((data['delta'] ?? '').trim());
+    if (delta == null || delta == 0) {
+      app.toast('请输入非零的整数', type: ToastType.error);
+      return;
+    }
+    try {
+      await app.store.adjustPoints(user.id, delta);
+      app.toast('积分已调整', type: ToastType.success);
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Future<void> _loadAvatars() async {
+    final app = AppScope.of(context);
+    setState(() => _loadingAvatars = true);
+    try {
+      final list = await app.store.pendingAvatars();
+      if (!mounted) return;
+      setState(() {
+        _avatars = list;
+        _loadingAvatars = false;
+      });
+    } on StoreException {
+      if (!mounted) return;
+      setState(() => _loadingAvatars = false);
+    }
+  }
+
+  Future<void> _reviewAvatar(Map<String, dynamic> entry, bool approve) async {
+    final app = AppScope.of(context);
+    final raw = entry['user'];
+    if (raw is! Map) return;
+    final user = AppUser.fromJson(Map<String, dynamic>.from(raw));
+    try {
+      await app.store.reviewAvatar(user.id, approve: approve);
+      app.toast(approve ? '头像已通过' : '已拒绝该头像', type: ToastType.success);
+      await _loadAvatars();
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Widget _avatarCard(Map<String, dynamic> entry) {
+    final t = QColors.of(context);
+    final raw = entry['user'];
+    if (raw is! Map) return const SizedBox.shrink();
+    final user = AppUser.fromJson(Map<String, dynamic>.from(raw));
+    final url = qImageUrl(entry['pendingUrl'] as String? ?? '');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.border),
+        boxShadow: t.cardShadow,
+      ),
+      child: Row(
+        children: [
+          ClipOval(
+            child: Image.network(
+              url,
+              width: 46,
+              height: 46,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 46,
+                height: 46,
+                alignment: Alignment.center,
+                color: t.field,
+                child: Icon(Icons.person_outline_rounded, size: 20, color: t.text3),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.nickname,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: t.text),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '@${user.username} · 待审核新头像',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10.5, color: t.text3),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _TinyButton(
+            icon: Icons.check_rounded,
+            label: '通过',
+            onTap: () => _reviewAvatar(entry, true),
+          ),
+          const SizedBox(width: 6),
+          _TinyButton(
+            icon: Icons.close_rounded,
+            label: '拒绝',
+            danger: true,
+            onTap: () => _reviewAvatar(entry, false),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
@@ -1053,6 +1351,28 @@ class _UsersTabState extends State<_UsersTab> {
             ),
           ],
         ),
+        if (_loadingAvatars)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+        if (_avatars.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Text(
+                '待审核头像',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: t.text),
+              ),
+              const SizedBox(width: 6),
+              QPill(text: '${_avatars.length}', style: QPillStyle.soft),
+              const Spacer(),
+              QTextButton(label: '刷新', onTap: _loadAvatars),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final entry in _avatars) _avatarCard(entry),
+        ],
         const SizedBox(height: 14),
         Row(
           children: [
@@ -1149,7 +1469,11 @@ class _UsersTabState extends State<_UsersTab> {
                               ],
                               if (user.title.isNotEmpty) ...[
                                 const SizedBox(width: 5),
-                                QTitleBadge(title: user.title),
+                                QTitleBadge(
+                                  title: user.title,
+                                  granted: user.grantedTitle.isNotEmpty &&
+                                      user.title == user.grantedTitle,
+                                ),
                               ],
                               if (user.banned) ...[
                                 const SizedBox(width: 5),
@@ -1195,7 +1519,9 @@ class _UsersTabState extends State<_UsersTab> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                Row(
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
                   children: [
                     if (user.isAdmin)
                       const QPill(
@@ -1212,17 +1538,20 @@ class _UsersTabState extends State<_UsersTab> {
                         danger: !user.banned,
                         onTap: () => _toggleBan(user),
                       ),
-                    const SizedBox(width: 7),
                     _TinyButton(
                       icon: Icons.key_rounded,
                       label: '修改密码',
                       onTap: () => _resetPassword(user),
                     ),
-                    const SizedBox(width: 7),
                     _TinyButton(
                       icon: Icons.workspace_premium_outlined,
                       label: '称号',
                       onTap: () => _grantTitle(user),
+                    ),
+                    _TinyButton(
+                      icon: Icons.stars_outlined,
+                      label: '积分',
+                      onTap: () => _adjustPoints(user),
                     ),
                   ],
                 ),

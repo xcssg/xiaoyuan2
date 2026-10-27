@@ -58,7 +58,7 @@ class MessagesScreen extends StatelessWidget {
               ],
               const SizedBox(height: 18),
               Text(
-                '消息中心 · 服务器每 30 秒自动同步',
+                '消息中心',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 10.5, color: t.text3),
               ),

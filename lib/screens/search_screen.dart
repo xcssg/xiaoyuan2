@@ -182,7 +182,11 @@ class _SearchScreenState extends State<SearchScreen> {
                                   ],
                                   if (user.title.isNotEmpty) ...[
                                     const SizedBox(width: 5),
-                                    QTitleBadge(title: user.title),
+                                    QTitleBadge(
+                                      title: user.title,
+                                      granted: user.grantedTitle.isNotEmpty &&
+                                          user.title == user.grantedTitle,
+                                    ),
                                   ],
                                   if (user.banned) ...[
                                     const SizedBox(width: 5),

@@ -2,6 +2,7 @@ const path = require('node:path');
 require('dotenv').config({ path: process.env.ENV_FILE || path.join(__dirname, '..', '.env') });
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -19,9 +20,13 @@ const HOST = process.env.HOST || '127.0.0.1';
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '6mb' }));
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d' }));
 app.use(rateLimit({
   windowMs: 60 * 1000,
   limit: 180,
@@ -74,7 +79,9 @@ function stats() {
   const total = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
   const online = db.prepare('SELECT COUNT(*) AS n FROM users WHERE online = 1 AND banned = 0 AND last_active > ?').get(cutoff).n;
   const banned = db.prepare('SELECT COUNT(*) AS n FROM users WHERE banned = 1').get().n;
-  return { total, online, banned };
+  const pendingPosts = db.prepare("SELECT COUNT(*) AS n FROM posts WHERE deleted = 0 AND status = 'pending'").get().n;
+  const pendingAvatars = db.prepare("SELECT COUNT(*) AS n FROM users WHERE avatar_pending <> ''").get().n;
+  return { total, online, banned, pendingPosts, pendingAvatars };
 }
 
 function addMessage(userId, type, title, content) {
@@ -168,6 +175,30 @@ function awardTaskType(userId, type) {
 
 function getPostRow(id) {
   return db.prepare('SELECT * FROM posts WHERE id = ? AND deleted = 0').get(id);
+}
+
+const IMAGE_EXT = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+function saveImage(data, prefix) {
+  const raw = text(data);
+  if (!raw) return '';
+  const match = /^data:(image\/[a-z+]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(raw);
+  if (!match || !IMAGE_EXT[match[1].toLowerCase()]) {
+    fail('图片格式不支持，请选择 JPG、PNG 或 WEBP 图片');
+  }
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length) fail('图片内容为空');
+  if (buffer.length > 3 * 1024 * 1024) fail('图片不能超过 3MB');
+  const name = `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${IMAGE_EXT[match[1].toLowerCase()]}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, name), buffer);
+  return `/uploads/${name}`;
+}
+
+function canSeePost(row, viewer) {
+  if (!row) return false;
+  if (row.status === 'approved' || !row.status) return true;
+  if (!viewer) return false;
+  return viewer.role === 'admin' || row.author_id === viewer.id;
 }
 
 function createCaptcha() {
@@ -284,6 +315,7 @@ app.get('/api/bootstrap', optionalAuth, (req, res) => {
   const users = db.prepare('SELECT * FROM users').all().map((row) => publicUser(row, fresh));
   const bars = db.prepare('SELECT * FROM bars ORDER BY created_at ASC').all().map(barJson);
   const posts = db.prepare('SELECT * FROM posts WHERE deleted = 0 ORDER BY created_at DESC').all()
+    .filter((row) => fresh.role === 'admin' || canSeePost(row, fresh))
     .map((row) => postJson(row, fresh.id));
   const messages = db.prepare('SELECT * FROM messages WHERE user_id = ? ORDER BY created_at DESC').all(fresh.id)
     .map(messageJson);
@@ -312,6 +344,7 @@ app.get('/api/posts', optionalAuth, (req, res) => {
   const limit = Math.min(200, Math.max(0, Number(req.query.limit) || 0));
 
   let rows = db.prepare('SELECT * FROM posts WHERE deleted = 0').all();
+  rows = rows.filter((row) => canSeePost(row, me));
   if (barId) rows = rows.filter((row) => row.bar_id === barId);
   if (q) {
     rows = rows.filter((row) => {
@@ -334,7 +367,7 @@ app.get('/api/posts', optionalAuth, (req, res) => {
 
 app.get('/api/posts/:id', optionalAuth, (req, res) => {
   const row = getPostRow(req.params.id);
-  if (!row) return res.status(404).json({ error: '帖子不存在或已被删除' });
+  if (!row || !canSeePost(row, req.user)) return res.status(404).json({ error: '帖子不存在或已被删除' });
   res.json(postJson(row, req.user && req.user.id));
 });
 
@@ -343,6 +376,7 @@ app.post('/api/posts', requireAuth, (req, res) => {
   const title = text(req.body.title);
   const content = text(req.body.content);
   const anonymous = !!req.body.anonymous;
+  const imageUrl = saveImage(req.body.image, `post_${req.user.id}`);
 
   if (!db.prepare('SELECT 1 AS ok FROM bars WHERE id = ?').get(barId)) fail('请选择要发布到的贴吧');
   if (title.length < 4) fail('标题至少需要 4 个字');
@@ -350,10 +384,13 @@ app.post('/api/posts', requireAuth, (req, res) => {
   if (content.length < 6) fail('正文至少需要 6 个字');
   if (content.length > 1000) fail('正文不能超过 1000 个字');
 
+  const status = req.user.role === 'admin' ? 'approved' : 'pending';
   const id = newId('p');
-  db.prepare('INSERT INTO posts (id, bar_id, author_id, title, content, anonymous, likes, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)')
-    .run(id, barId, req.user.id, title, content, anonymous ? 1 : 0, now());
-  awardTaskType(req.user.id, 'post');
+  db.prepare(`INSERT INTO posts
+    (id, bar_id, author_id, title, content, anonymous, likes, created_at, image_url, status)
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`)
+    .run(id, barId, req.user.id, title, content, anonymous ? 1 : 0, now(), imageUrl, status);
+  if (status === 'approved') awardTaskType(req.user.id, 'post');
   res.status(201).json(postJson(getPostRow(id), req.user.id));
 });
 
@@ -370,7 +407,7 @@ app.delete('/api/posts/:id', requireAuth, (req, res) => {
 
 app.post('/api/posts/:id/like', requireAuth, (req, res) => {
   const row = getPostRow(req.params.id);
-  if (!row) return res.status(404).json({ error: '帖子不存在' });
+  if (!row || !canSeePost(row, req.user)) return res.status(404).json({ error: '帖子不存在' });
 
   const liked = !!db.prepare('SELECT 1 AS ok FROM post_likes WHERE post_id = ? AND user_id = ?').get(row.id, req.user.id);
   db.exec('BEGIN');
@@ -396,7 +433,7 @@ app.post('/api/posts/:id/like', requireAuth, (req, res) => {
 
 app.post('/api/posts/:id/comments', requireAuth, (req, res) => {
   const row = getPostRow(req.params.id);
-  if (!row) return res.status(404).json({ error: '帖子不存在' });
+  if (!row || !canSeePost(row, req.user)) return res.status(404).json({ error: '帖子不存在' });
   const content = text(req.body.content);
   if (!content) fail('评论内容不能为空');
   if (content.length > 200) fail('评论不能超过 200 字');
@@ -462,6 +499,20 @@ app.patch('/api/me/profile', requireAuth, (req, res) => {
     avatar = ?, equipped_frame = ?, equipped_color = ?, title = ? WHERE id = ?`)
     .run(nickname, realName, className, bio, showProfile ? 1 : 0, avatar, frameId, colorId, title, user.id);
 
+  const fresh = getFreshUser(user.id);
+  res.json({
+    user: publicUser(fresh, fresh),
+    shopItems: shopList(fresh.id),
+    tasks: taskList(fresh.id),
+  });
+});
+
+app.post('/api/me/avatar', requireAuth, (req, res) => {
+  const user = getFreshUser(req.user.id);
+  const url = saveImage(req.body.image, `avatar_${user.id}`);
+  if (!url) fail('请选择要上传的图片');
+  db.prepare("UPDATE users SET avatar_pending = ?, avatar_status = 'pending' WHERE id = ?")
+    .run(url, user.id);
   const fresh = getFreshUser(user.id);
   res.json({
     user: publicUser(fresh, fresh),
@@ -606,6 +657,70 @@ app.post('/api/admin/users/:id/title', requireAdmin, (req, res) => {
     if (user.title === oldGranted) {
       db.prepare("UPDATE users SET title = '' WHERE id = ?").run(user.id);
     }
+  }
+  res.json(publicUser(getFreshUser(user.id), req.user));
+});
+
+app.post('/api/admin/users/:id/points', requireAdmin, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+  const delta = Number(req.body.delta);
+  if (!Number.isInteger(delta) || delta === 0) fail('请输入非零的整数积分');
+  if (Math.abs(delta) > 10000) fail('单次调整不能超过 10000 积分');
+  const next = Math.max(0, user.points + delta);
+  db.prepare('UPDATE users SET points = ? WHERE id = ?').run(next, user.id);
+  addMessage(
+    user.id,
+    'system',
+    delta > 0 ? '积分增加' : '积分调整',
+    delta > 0 ? `管理员为你增加了 ${delta} 积分` : `管理员为你扣减了 ${-delta} 积分`,
+  );
+  res.json(publicUser(getFreshUser(user.id), req.user));
+});
+
+app.get('/api/admin/posts/pending', requireAdmin, (req, res) => {
+  const rows = db.prepare("SELECT * FROM posts WHERE deleted = 0 AND status = 'pending' ORDER BY created_at ASC").all();
+  res.json(rows.map((row) => postJson(row, req.user.id)));
+});
+
+app.post('/api/admin/posts/:id/review', requireAdmin, (req, res) => {
+  const row = getPostRow(req.params.id);
+  if (!row) return res.status(404).json({ error: '帖子不存在或已被删除' });
+  const approve = !!req.body.approve;
+  const reason = text(req.body.reason);
+  if (!approve && !reason) fail('请填写不通过的理由');
+  if (reason.length > 100) fail('理由不能超过 100 个字');
+
+  db.prepare('UPDATE posts SET status = ?, reject_reason = ? WHERE id = ?')
+    .run(approve ? 'approved' : 'rejected', approve ? '' : reason, row.id);
+  if (approve) {
+    awardTaskType(row.author_id, 'post');
+    addMessage(row.author_id, 'system', '帖子已通过审核', `「${row.title}」已通过审核，展示在贴吧中。`);
+  } else {
+    addMessage(row.author_id, 'system', '帖子未通过审核', `「${row.title}」未通过审核：${reason}`);
+  }
+  res.json(postJson(getPostRow(row.id), req.user.id));
+});
+
+app.get('/api/admin/avatars', requireAdmin, (req, res) => {
+  const rows = db.prepare("SELECT * FROM users WHERE avatar_pending <> '' ORDER BY joined_at ASC").all();
+  res.json(rows.map((row) => ({
+    user: publicUser(row, req.user),
+    pendingUrl: row.avatar_pending,
+  })));
+});
+
+app.post('/api/admin/avatars/:id/review', requireAdmin, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+  if (!user.avatar_pending) fail('该用户没有待审核的头像');
+  if (req.body.approve) {
+    db.prepare("UPDATE users SET avatar_url = avatar_pending, avatar_pending = '', avatar_status = 'approved' WHERE id = ?")
+      .run(user.id);
+    addMessage(user.id, 'system', '头像审核通过', '你上传的新头像已通过审核。');
+  } else {
+    db.prepare("UPDATE users SET avatar_pending = '', avatar_status = 'rejected' WHERE id = ?").run(user.id);
+    addMessage(user.id, 'system', '头像未通过审核', '你上传的头像未通过审核，请更换后重新提交。');
   }
   res.json(publicUser(getFreshUser(user.id), req.user));
 });

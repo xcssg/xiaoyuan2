@@ -36,6 +36,8 @@ function publicUser(row, viewer) {
     banned: !!row.banned,
     online: isOnline(row),
     avatar: row.avatar,
+    avatarUrl: row.avatar_url || '',
+    avatarStatus: isSelf || isAdmin ? row.avatar_status || 'none' : 'none',
     bio: row.bio,
     joinedAt: row.joined_at,
     realName: showReal ? row.real_name : '',

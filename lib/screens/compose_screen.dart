@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../app_state.dart';
 import '../data/models.dart';
@@ -21,6 +25,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
   String? _barId;
   bool _anonymous = false;
   bool _busy = false;
+  String? _imageData;
+  Uint8List? _imagePreview;
 
   @override
   void initState() {
@@ -41,6 +47,33 @@ class _ComposeScreenState extends State<ComposeScreen> {
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    final app = AppScope.of(context);
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      imageQuality: 80,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (bytes.length > 3 * 1024 * 1024) {
+      if (!mounted) return;
+      app.toast('图片不能超过 3MB', type: ToastType.error);
+      return;
+    }
+    final name = picked.name.toLowerCase();
+    final ext = name.endsWith('.png')
+        ? 'png'
+        : name.endsWith('.webp')
+            ? 'webp'
+            : 'jpeg';
+    if (!mounted) return;
+    setState(() {
+      _imagePreview = bytes;
+      _imageData = 'data:image/$ext;base64,${base64Encode(bytes)}';
+    });
+  }
+
   Future<void> _submit() async {
     if (_busy) return;
     final app = AppScope.of(context);
@@ -55,14 +88,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
         title: _title.text,
         content: _content.text,
         anonymous: _anonymous,
+        image: _imageData,
       );
       if (!mounted) return;
       setState(() {
         _busy = false;
         _anonymous = false;
+        _imageData = null;
+        _imagePreview = null;
       });
       app.setComposeAnonymous(false);
-      app.toast('发布成功', type: ToastType.success);
+      app.toast(
+        post.status == 'pending' ? '已提交审核，通过后展示给其他同学' : '发布成功',
+        type: ToastType.success,
+      );
       app.replace(AppRoute.post(post.id));
     } on StoreException catch (e) {
       if (!mounted) return;
@@ -144,7 +183,65 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 controller: _content,
                 hint: '补充细节，让同学更容易帮到你…',
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
+              _FieldLabel('图片（可选）'),
+              if (_imagePreview != null)
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.memory(
+                        _imagePreview!,
+                        width: double.infinity,
+                        height: 170,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Pressable(
+                        onTap: () => setState(() {
+                          _imagePreview = null;
+                          _imageData = null;
+                        }),
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close_rounded, size: 16, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Pressable(
+                  onTap: _pickImage,
+                  child: Container(
+                    height: 84,
+                    decoration: BoxDecoration(
+                      color: t.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: t.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_photo_alternate_outlined, size: 19, color: t.text3),
+                        const SizedBox(width: 8),
+                        Text(
+                          '从相册选择一张图片',
+                          style: TextStyle(fontSize: 12, color: t.text3),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
                 decoration: BoxDecoration(

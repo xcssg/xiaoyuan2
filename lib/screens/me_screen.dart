@@ -114,16 +114,20 @@ class MeScreen extends StatelessWidget {
                                               ),
                                             ),
                                           ),
+                                          if (u.title.isNotEmpty) ...[
+                                            const SizedBox(width: 6),
+                                            QTitleBadge(
+                                              title: u.title,
+                                              granted: u.grantedTitle.isNotEmpty &&
+                                                  u.title == u.grantedTitle,
+                                            ),
+                                          ],
                                           if (u.isAdmin) ...[
                                             const SizedBox(width: 7),
                                             const QPill(
                                               text: '管理员',
                                               icon: Icons.shield_outlined,
                                             ),
-                                          ],
-                                          if (u.title.isNotEmpty) ...[
-                                            const SizedBox(width: 6),
-                                            QTitleBadge(title: u.title),
                                           ],
                                         ],
                                       ),
@@ -318,7 +322,7 @@ class MeScreen extends StatelessWidget {
                       onTap: () => showQDialog(
                         context,
                         title: '关于乌市职专墙',
-                        desc: '${store.aboutText}\n\n${store.version} · CAMPUS WALL',
+                        desc: '${store.aboutText}\n\n${store.version} · UVSS',
                       ),
                     ),
                     _MenuRow(
@@ -335,7 +339,7 @@ class MeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Text(
-                '乌市职专墙 CAMPUS WALL · ${store.version}',
+                '乌市职专墙 UVSS · ${store.version}',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 10,

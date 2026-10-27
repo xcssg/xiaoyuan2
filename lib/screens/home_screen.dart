@@ -62,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (user == null) return const SizedBox.shrink();
     final unread = store.unreadCount;
     final mods = store.modules.where((m) => m.key != 'general').toList();
-    final hot = store.posts(sort: 'hot', limit: 4);
+    final hot = store.posts(sort: 'hot', limit: 10);
     final announcement = store.latestAnnouncement;
     final people = store.users().where((u) => !u.banned).length;
 
@@ -76,41 +76,38 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: IgnorePointer(
                   ignoring: _progress > .95,
-                  child: Transform.translate(
-                    offset: Offset(-18 * _progress, 0),
-                    child: ShaderMask(
-                      blendMode: BlendMode.dstIn,
-                      shaderCallback: (rect) => LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: const [Colors.transparent, Colors.white],
-                        stops: [0, _progress.clamp(.001, 1.0)],
-                      ).createShader(rect),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${greeting()}，${user.nickname}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12, color: t.text2, letterSpacing: .2),
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: const [Colors.white, Colors.transparent],
+                      stops: [(1 - _progress).clamp(0.0, .999), 1],
+                    ).createShader(rect),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${greeting()}，${user.nickname}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: t.text2, letterSpacing: .2),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '乌市职专墙',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
+                            letterSpacing: -.4,
+                            color: t.text,
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '乌市职专墙',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 23,
-                              fontWeight: FontWeight.w700,
-                              height: 1.2,
-                              letterSpacing: -.4,
-                              color: t.text,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -217,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisCount: 2,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childAspectRatio: 1.32,
+                childAspectRatio: 1.16,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
@@ -405,7 +402,7 @@ class _HeroCard extends StatelessWidget {
                           const Icon(Icons.auto_awesome_rounded, size: 12, color: Colors.white),
                           const SizedBox(width: 5),
                           Text(
-                            'CAMPUS WALL',
+                            'UVSS',
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,
@@ -492,49 +489,61 @@ class _ModuleCard extends StatelessWidget {
     final t = QColors.of(context);
     final store = AppScope.of(context).store;
     final mod = store.moduleOf(moduleKey);
-    final bars = store.bars(moduleKey);
-    final members = bars.isEmpty ? 0 : store.memberCount(bars.first.id);
+    final posts = store.countModule(mod.key);
+    final members = store
+        .bars(mod.key)
+        .fold<int>(0, (sum, item) => sum + store.memberCount(item.id));
+
     return Pressable(
       onTap: onTap,
       scale: .975,
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: t.surface,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: t.border),
           boxShadow: t.cardShadow,
         ),
         child: Stack(
           children: [
             Positioned(
-              right: -28,
-              top: -30,
+              right: -30,
+              bottom: -36,
               child: Container(
-                width: 84,
-                height: 84,
+                width: 104,
+                height: 104,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: mod.color.withOpacity(.13),
+                  gradient: RadialGradient(
+                    colors: [
+                      mod.color.withOpacity(.20),
+                      mod.color.withOpacity(0),
+                    ],
+                    stops: const [0, .72],
+                  ),
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(15),
+              padding: const EdgeInsets.fromLTRB(15, 13, 15, 13),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
                       color: mod.color.withOpacity(.13),
-                      borderRadius: BorderRadius.circular(13),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(qIcon(mod.icon), size: 21, color: mod.color),
+                    child: Icon(qIcon(mod.icon), size: 19, color: mod.color),
                   ),
-                  const SizedBox(height: 12),
+                  const Spacer(),
                   Text(
                     mod.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -542,12 +551,18 @@ class _ModuleCard extends StatelessWidget {
                       letterSpacing: -.1,
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${store.countModule(mod.key)} 条帖子 · $members 位同学',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11, color: t.text3),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _ModuleMetric(value: '$posts', label: '帖子'),
+                      Container(
+                        width: 1,
+                        height: 12,
+                        margin: const EdgeInsets.symmetric(horizontal: 9),
+                        color: t.line,
+                      ),
+                      _ModuleMetric(value: '$members', label: '同学'),
+                    ],
                   ),
                 ],
               ),
@@ -555,6 +570,37 @@ class _ModuleCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ModuleMetric extends StatelessWidget {
+  const _ModuleMetric({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = QColors.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: t.text,
+            height: 1,
+          ),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(fontSize: 10.5, color: t.text3, height: 1),
+        ),
+      ],
     );
   }
 }

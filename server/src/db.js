@@ -29,7 +29,10 @@ db.exec(`
     equipped_frame TEXT NOT NULL DEFAULT '',
     equipped_color TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL DEFAULT '',
-    granted_title TEXT NOT NULL DEFAULT ''
+    granted_title TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT NOT NULL DEFAULT '',
+    avatar_pending TEXT NOT NULL DEFAULT '',
+    avatar_status TEXT NOT NULL DEFAULT 'none'
   );
 
   CREATE TABLE IF NOT EXISTS bars (
@@ -53,7 +56,10 @@ db.exec(`
     created_at INTEGER NOT NULL,
     deleted INTEGER NOT NULL DEFAULT 0,
     deleted_at INTEGER,
-    deleted_by TEXT
+    deleted_by TEXT,
+    image_url TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'approved',
+    reject_reason TEXT NOT NULL DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS post_likes (
@@ -161,6 +167,12 @@ ensureColumn('users', 'equipped_frame', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('users', 'equipped_color', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('users', 'title', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('users', 'granted_title', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('users', 'avatar_url', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('users', 'avatar_pending', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('users', 'avatar_status', "TEXT NOT NULL DEFAULT 'none'");
+ensureColumn('posts', 'image_url', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('posts', 'status', "TEXT NOT NULL DEFAULT 'approved'");
+ensureColumn('posts', 'reject_reason', "TEXT NOT NULL DEFAULT ''");
 
 seed(db);
 seedDefaults(db);

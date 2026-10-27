@@ -371,17 +371,74 @@ class Store extends ChangeNotifier {
     required String title,
     required String content,
     required bool anonymous,
+    String? image,
   }) async {
     final data = await _api.post('/api/posts', {
       'barId': barId,
       'title': title,
       'content': content,
       'anonymous': anonymous,
+      if (image != null && image.isNotEmpty) 'image': image,
     });
     final post = Post.fromJson(Map<String, dynamic>.from(data as Map));
     _posts.insert(0, post);
     notifyListeners();
     return post;
+  }
+
+  Future<void> uploadAvatar(String dataUrl) async {
+    final data = await _api.post('/api/me/avatar', {'image': dataUrl});
+    _applyUserPayload(data);
+  }
+
+  Future<void> adjustPoints(String userId, int delta) async {
+    final data = await _api.post('/api/admin/users/$userId/points', {'delta': delta});
+    final user = AppUser.fromJson(Map<String, dynamic>.from(data as Map));
+    final index = _users.indexWhere((u) => u.id == userId);
+    if (index >= 0) _users[index] = user;
+    notifyListeners();
+  }
+
+  Future<List<Post>> pendingPosts() async {
+    final data = await _api.get('/api/admin/posts/pending');
+    if (data is! List) return const [];
+    return data
+        .whereType<Map>()
+        .map((item) => Post.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<Post> reviewPost(String postId, {required bool approve, String reason = ''}) async {
+    final data = await _api.post('/api/admin/posts/$postId/review', {
+      'approve': approve,
+      if (!approve) 'reason': reason,
+    });
+    final post = Post.fromJson(Map<String, dynamic>.from(data as Map));
+    final index = _posts.indexWhere((p) => p.id == postId);
+    if (index >= 0) {
+      _posts[index] = post;
+    } else if (approve) {
+      _posts.insert(0, post);
+    }
+    notifyListeners();
+    return post;
+  }
+
+  Future<List<Map<String, dynamic>>> pendingAvatars() async {
+    final data = await _api.get('/api/admin/avatars');
+    if (data is! List) return const [];
+    return data
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  Future<void> reviewAvatar(String userId, {required bool approve}) async {
+    final data = await _api.post('/api/admin/avatars/$userId/review', {'approve': approve});
+    final user = AppUser.fromJson(Map<String, dynamic>.from(data as Map));
+    final index = _users.indexWhere((u) => u.id == userId);
+    if (index >= 0) _users[index] = user;
+    notifyListeners();
   }
 
   Future<void> addComment(String postId, String content) async {
