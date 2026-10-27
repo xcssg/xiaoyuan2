@@ -1,12 +1,56 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../data/models.dart';
 import '../theme/q_colors.dart';
 import '../theme/q_utils.dart';
 import '../widgets/common.dart';
+import '../widgets/dialogs.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final ScrollController _scroll = ScrollController();
+  double _progress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    final value = (_scroll.hasClients ? _scroll.offset : 0) / 64;
+    final progress = value.clamp(0.0, 1.0);
+    if ((progress - _progress).abs() > .01) {
+      setState(() => _progress = progress);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openAnnouncement(BuildContext context, Announcement item) async {
+    final app = AppScope.of(context);
+    showQDialog(
+      context,
+      title: item.title,
+      desc: item.content,
+      confirmText: '知道了',
+    );
+    try {
+      await app.store.markAnnouncementRead(item.id);
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,51 +59,98 @@ class HomeScreen extends StatelessWidget {
     final t = QColors.of(context);
     final user = store.current;
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    if (user == null) {
-      return const SizedBox.shrink();
-    }
+    if (user == null) return const SizedBox.shrink();
     final unread = store.unreadCount;
-    final mods = store.modules;
+    final mods = store.modules.where((m) => m.key != 'general').toList();
     final hot = store.posts(sort: 'hot', limit: 4);
+    final announcement = store.latestAnnouncement;
+    final people = store.users().where((u) => !u.banned).length;
 
     return Column(
       children: [
-        QTopBar(
-          subtitle: '${greeting()}，${user.nickname}',
-          title: '乌市职专墙',
-          actions: [
-            QIconButton(
-              icon: app.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-              onTap: app.toggleTheme,
-              iconSize: 19,
-            ),
-            Pressable(
-              onTap: () => app.navigate(AppRoute.me),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  QAvatar(user: user, size: 38),
-                  if (unread > 0)
-                    Positioned(
-                      top: 1,
-                      right: 1,
-                      child: Container(
-                        width: 9,
-                        height: 9,
-                        decoration: BoxDecoration(
-                          color: t.danger,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: t.bg, width: 2),
-                        ),
+        Container(
+          color: t.bgTop.withOpacity(.94),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: IgnorePointer(
+                  ignoring: _progress > .95,
+                  child: Transform.translate(
+                    offset: Offset(-18 * _progress, 0),
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: const [Colors.transparent, Colors.white],
+                        stops: [0, _progress.clamp(.001, 1.0)],
+                      ).createShader(rect),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${greeting()}，${user.nickname}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: t.text2, letterSpacing: .2),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '乌市职专墙',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 23,
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                              letterSpacing: -.4,
+                              color: t.text,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                ],
+                  ),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              QIconButton(
+                icon: app.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                onTap: app.toggleTheme,
+                iconSize: 19,
+              ),
+              const SizedBox(width: 8),
+              Pressable(
+                onTap: () => app.navigate(AppRoute.me),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    QAvatar(user: user, size: 38),
+                    if (unread > 0)
+                      Positioned(
+                        top: 1,
+                        right: 1,
+                        child: Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                            color: t.danger,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: t.bg, width: 2),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         Expanded(
           child: ListView(
+            controller: _scroll,
             padding: EdgeInsets.fromLTRB(18, 4, 18, 112 + bottomInset),
             children: [
               Pressable(
@@ -68,50 +159,53 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               _HeroCard(
+                people: people,
                 onCreate: () => app.navigate(AppRoute.compose),
               ),
-              const SizedBox(height: 12),
-              Pressable(
-                onTap: () => app.navigate(AppRoute.post('p10')),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-                  decoration: BoxDecoration(
-                    color: t.surface,
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: t.border),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: t.brand.withOpacity(.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '公告',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: t.brand,
-                            letterSpacing: .4,
+              if (announcement != null) ...[
+                const SizedBox(height: 12),
+                Pressable(
+                  onTap: () => _openAnnouncement(context, announcement),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: t.surface,
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: t.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: (announcement.important ? t.danger : t.brand).withOpacity(.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            announcement.important ? '重要' : '公告',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: announcement.important ? t.danger : t.brand,
+                              letterSpacing: .4,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          '失物招领处已搬迁至学生活动中心 105 室',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: t.text2),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            announcement.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: t.text2),
+                          ),
                         ),
-                      ),
-                      Icon(Icons.chevron_right_rounded, size: 15, color: t.text3),
-                    ],
+                        Icon(Icons.chevron_right_rounded, size: 15, color: t.text3),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
               QSectionHead(
                 title: '校园四大板块',
                 trailing: Text(
@@ -132,9 +226,7 @@ class HomeScreen extends StatelessWidget {
                       moduleKey: mod.key,
                       onTap: () {
                         final list = store.bars(mod.key);
-                        app.navigate(list.isEmpty
-                            ? AppRoute.bars
-                            : AppRoute.bar(list.first.id));
+                        app.navigate(list.isEmpty ? AppRoute.bars : AppRoute.bar(list.first.id));
                       },
                     ),
                 ],
@@ -145,31 +237,52 @@ class HomeScreen extends StatelessWidget {
                   onTap: () => app.navigate(AppRoute.bars),
                   child: Row(
                     children: [
-                      Text(
-                        '全部贴吧',
-                        style: TextStyle(fontSize: 12, color: t.text3),
-                      ),
+                      Text('全部贴吧', style: TextStyle(fontSize: 12, color: t.text3)),
                       Icon(Icons.chevron_right_rounded, size: 14, color: t.text3),
                     ],
                   ),
                 ),
               ),
-              for (var i = 0; i < hot.length; i++) ...[
-                if (i > 0) const SizedBox(height: 11),
-                QPostCard(
-                  post: hot[i],
-                  onTap: () => app.navigate(AppRoute.post(hot[i].id)),
-                ),
-              ],
+              if (hot.isEmpty)
+                QCard(
+                  child: Column(
+                    children: [
+                      Icon(Icons.chat_bubble_outline_rounded, size: 28, color: t.text3),
+                      const SizedBox(height: 8),
+                      Text(
+                        '还没有帖子',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: t.text2),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '成为第一个发帖的同学吧',
+                        style: TextStyle(fontSize: 11, color: t.text3),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: 132,
+                        child: QButton(
+                          label: '去发帖',
+                          height: 36,
+                          onTap: () => app.navigate(AppRoute.compose),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                for (var i = 0; i < hot.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 11),
+                  QPostCard(
+                    post: hot[i],
+                    onTap: () => app.navigate(AppRoute.post(hot[i].id)),
+                  ),
+                ],
               const SizedBox(height: 22),
               Text(
                 '— 乌市职专墙 · 让校园更近一点 —',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: t.text3,
-                  letterSpacing: .8,
-                ),
+                style: TextStyle(fontSize: 10, color: t.text3, letterSpacing: .8),
               ),
               const SizedBox(height: 6),
             ],
@@ -225,8 +338,9 @@ class _SearchBar extends StatelessWidget {
 }
 
 class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.onCreate});
+  const _HeroCard({required this.people, required this.onCreate});
 
+  final int people;
   final VoidCallback onCreate;
 
   @override
@@ -315,7 +429,7 @@ class _HeroCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '已有 1,286 位同学在乌市职专墙互相帮忙',
+                      '已有 $people 位同学在乌市职专墙互相帮忙',
                       style: TextStyle(
                         fontSize: 12.5,
                         color: Colors.white.withOpacity(.8),
@@ -379,7 +493,7 @@ class _ModuleCard extends StatelessWidget {
     final store = AppScope.of(context).store;
     final mod = store.moduleOf(moduleKey);
     final bars = store.bars(moduleKey);
-    final members = bars.isEmpty ? 0 : bars.first.members;
+    final members = bars.isEmpty ? 0 : store.memberCount(bars.first.id);
     return Pressable(
       onTap: onTap,
       scale: .975,
@@ -430,7 +544,7 @@ class _ModuleCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${store.countModule(mod.key)} 条帖子 · $members 成员',
+                    '${store.countModule(mod.key)} 条帖子 · $members 位同学',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: t.text3),

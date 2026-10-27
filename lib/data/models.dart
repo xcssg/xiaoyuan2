@@ -37,6 +37,16 @@ class AppUser {
     required this.avatar,
     required this.bio,
     required this.joinedAt,
+    this.realName = '',
+    this.className = '',
+    this.showProfile = false,
+    this.points = 0,
+    this.avatarFrame = '',
+    this.nameColor = '',
+    this.title = '',
+    this.grantedTitle = '',
+    this.equippedFrameId = '',
+    this.equippedColorId = '',
   });
 
   final String id;
@@ -49,6 +59,16 @@ class AppUser {
   int avatar;
   String bio;
   int joinedAt;
+  String realName;
+  String className;
+  bool showProfile;
+  int points;
+  String avatarFrame;
+  String nameColor;
+  String title;
+  String grantedTitle;
+  String equippedFrameId;
+  String equippedColorId;
 
   bool get isAdmin => role == 'admin';
 
@@ -63,6 +83,16 @@ class AppUser {
         avatar: json['avatar'] as int? ?? 0,
         bio: json['bio'] as String? ?? '',
         joinedAt: json['joinedAt'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+        realName: json['realName'] as String? ?? '',
+        className: json['className'] as String? ?? '',
+        showProfile: json['showProfile'] as bool? ?? false,
+        points: json['points'] as int? ?? 0,
+        avatarFrame: json['avatarFrame'] as String? ?? '',
+        nameColor: json['nameColor'] as String? ?? '',
+        title: json['title'] as String? ?? '',
+        grantedTitle: json['grantedTitle'] as String? ?? '',
+        equippedFrameId: json['equippedFrameId'] as String? ?? '',
+        equippedColorId: json['equippedColorId'] as String? ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -76,7 +106,119 @@ class AppUser {
         'avatar': avatar,
         'bio': bio,
         'joinedAt': joinedAt,
+        'realName': realName,
+        'className': className,
+        'showProfile': showProfile,
+        'points': points,
+        'avatarFrame': avatarFrame,
+        'nameColor': nameColor,
+        'title': title,
+        'grantedTitle': grantedTitle,
+        'equippedFrameId': equippedFrameId,
+        'equippedColorId': equippedColorId,
       };
+}
+
+class DailyTask {
+  DailyTask({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.type,
+    required this.points,
+    required this.completed,
+    required this.claimed,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String type;
+  final int points;
+  final bool completed;
+  final bool claimed;
+
+  factory DailyTask.fromJson(Map<String, dynamic> json) => DailyTask(
+        id: json['id'] as String,
+        title: json['title'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+        type: json['type'] as String? ?? 'manual',
+        points: json['points'] as int? ?? 0,
+        completed: json['completed'] as bool? ?? false,
+        claimed: json['claimed'] as bool? ?? false,
+      );
+}
+
+class ShopItem {
+  ShopItem({
+    required this.id,
+    required this.type,
+    required this.name,
+    required this.description,
+    required this.value,
+    required this.price,
+    required this.owned,
+    required this.equipped,
+  });
+
+  final String id;
+  final String type;
+  final String name;
+  final String description;
+  final String value;
+  final int price;
+  final bool owned;
+  final bool equipped;
+
+  factory ShopItem.fromJson(Map<String, dynamic> json) => ShopItem(
+        id: json['id'] as String,
+        type: json['type'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+        value: json['value'] as String? ?? '',
+        price: json['price'] as int? ?? 0,
+        owned: json['owned'] as bool? ?? false,
+        equipped: json['equipped'] as bool? ?? false,
+      );
+}
+
+class Announcement {
+  Announcement({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.important,
+    required this.read,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String content;
+  final bool important;
+  final bool read;
+  final int createdAt;
+
+  factory Announcement.fromJson(Map<String, dynamic> json) => Announcement(
+        id: json['id'] as String,
+        title: json['title'] as String? ?? '',
+        content: json['content'] as String? ?? '',
+        important: json['important'] as bool? ?? false,
+        read: json['read'] as bool? ?? false,
+        createdAt: json['createdAt'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+      );
+}
+
+class AppSettings {
+  const AppSettings({this.aboutText = '', this.version = 'V1.01'});
+
+  final String aboutText;
+  final String version;
+
+  factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
+        aboutText: json['aboutText'] as String? ?? '',
+        version: json['version'] as String? ?? 'V1.01',
+      );
 }
 
 class DiscussionBar {

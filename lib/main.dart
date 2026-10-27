@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,11 +14,14 @@ import 'screens/auth_screen.dart';
 import 'screens/bar_screen.dart';
 import 'screens/bars_screen.dart';
 import 'screens/compose_screen.dart';
+import 'screens/edit_profile_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/me_screen.dart';
 import 'screens/messages_screen.dart';
 import 'screens/post_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/shop_screen.dart';
+import 'screens/tasks_screen.dart';
 import 'theme/app_theme.dart';
 import 'theme/q_colors.dart';
 import 'widgets/common.dart';
@@ -245,8 +250,16 @@ class _ServerErrorScreen extends StatelessWidget {
   }
 }
 
-class RootShell extends StatelessWidget {
+class RootShell extends StatefulWidget {
   const RootShell({super.key});
+
+  @override
+  State<RootShell> createState() => _RootShellState();
+}
+
+class _RootShellState extends State<RootShell> {
+  final Set<String> _shownAnnouncements = {};
+  bool _showingAnnouncement = false;
 
   Widget _screen(AppState app) {
     final route = app.route;
@@ -269,11 +282,55 @@ class RootShell extends StatelessWidget {
         return const MessagesScreen();
       case 'me':
         return const MeScreen();
+      case 'edit-profile':
+        return const EditProfileScreen();
+      case 'tasks':
+        return const TasksScreen();
+      case 'shop':
+        return const ShopScreen();
       case 'admin':
         return AdminScreen(tab: route.tab ?? 'overview');
       default:
         return const HomeScreen();
     }
+  }
+
+  Future<void> _maybeShowAnnouncement(AppState app) async {
+    if (!mounted || _showingAnnouncement) return;
+    if (app.store.current == null) return;
+    final pending = app.store.pendingImportantAnnouncements
+        .where((item) => !_shownAnnouncements.contains(item.id))
+        .toList();
+    if (pending.isEmpty) return;
+
+    final item = pending.first;
+    _showingAnnouncement = true;
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: '重要公告',
+      barrierColor: const Color(0xB3060912),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, __, ___) => _AnnouncementDialog(item: item),
+      transitionBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: .94, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+    _shownAnnouncements.add(item.id);
+    try {
+      await app.store.markAnnouncementRead(item.id);
+    } catch (_) {
+      // 网络异常时本次会话不再重复弹窗
+    }
+    _showingAnnouncement = false;
+    if (mounted) _maybeShowAnnouncement(app);
   }
 
   @override
@@ -283,6 +340,8 @@ class RootShell extends StatelessWidget {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
     final route = app.route;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowAnnouncement(app));
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -313,7 +372,7 @@ class RootShell extends StatelessWidget {
                 child: SafeArea(
                   bottom: false,
                   child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
+                    duration: const Duration(milliseconds: 300),
                     switchInCurve: Curves.easeOutCubic,
                     switchOutCurve: Curves.easeInCubic,
                     layoutBuilder: (current, previous) => Stack(
@@ -324,14 +383,18 @@ class RootShell extends StatelessWidget {
                       ],
                     ),
                     transitionBuilder: (child, animation) {
+                      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
                       return FadeTransition(
-                        opacity: animation,
+                        opacity: curved,
                         child: SlideTransition(
                           position: Tween<Offset>(
-                            begin: const Offset(0, .018),
+                            begin: const Offset(0, .02),
                             end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
+                          ).animate(curved),
+                          child: ScaleTransition(
+                            scale: Tween<double>(begin: .985, end: 1).animate(curved),
+                            child: child,
+                          ),
                         ),
                       );
                     },
@@ -356,6 +419,123 @@ class RootShell extends StatelessWidget {
                 child: QToastLayer(app: app),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnnouncementDialog extends StatefulWidget {
+  const _AnnouncementDialog({required this.item});
+
+  final Announcement item;
+
+  @override
+  State<_AnnouncementDialog> createState() => _AnnouncementDialogState();
+}
+
+class _AnnouncementDialogState extends State<_AnnouncementDialog> {
+  int _left = 3;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() {
+        _left -= 1;
+        if (_left <= 0) timer.cancel();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = QColors.of(context);
+    return PopScope(
+      canPop: _left <= 0,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(maxWidth: 340),
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: t.surfaceSolid,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: t.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(.35),
+                  blurRadius: 46,
+                  offset: const Offset(0, 22),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: t.dangerSoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.campaign_outlined, size: 20, color: t.danger),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '重要公告',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.text3, letterSpacing: .5),
+                    ),
+                    const Spacer(),
+                    const QPill(text: '重要', style: QPillStyle.danger),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  widget.item.title,
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: t.text, letterSpacing: -.3),
+                ),
+                const SizedBox(height: 10),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      widget.item.content,
+                      style: TextStyle(fontSize: 13, height: 1.85, color: t.text2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (_left > 0)
+                  Center(
+                    child: Text(
+                      '请阅读 $_left 秒后可关闭',
+                      style: TextStyle(fontSize: 11.5, color: t.text3),
+                    ),
+                  )
+                else
+                  QButton(
+                    label: '我知道了',
+                    height: 46,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

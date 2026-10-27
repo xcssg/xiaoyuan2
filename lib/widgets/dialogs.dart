@@ -21,6 +21,7 @@ class QFormFieldSpec {
     this.maxLength,
     this.required = true,
     this.options,
+    this.multiline = false,
   });
 
   final String name;
@@ -32,6 +33,7 @@ class QFormFieldSpec {
   final int? maxLength;
   final bool required;
   final List<QFormOption>? options;
+  final bool multiline;
 }
 
 Future<T?> _showLayer<T>(BuildContext context, Widget card) {
@@ -352,7 +354,14 @@ class _FormCardState extends State<_FormCard> {
             ),
           ),
         ),
-        if (field.options != null)
+        if (field.multiline)
+          QTextArea(
+            controller: _controllers[field.name]!,
+            hint: field.hint ?? '',
+            maxLength: field.maxLength ?? 2000,
+            minHeight: 96,
+          )
+        else if (field.options != null)
           Container(
             height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 14),

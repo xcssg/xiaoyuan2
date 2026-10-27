@@ -18,6 +18,8 @@ class AdminScreen extends StatelessWidget {
     ('content', '内容'),
     ('users', '用户'),
     ('bars', '贴吧'),
+    ('operations', '运营'),
+    ('settings', '设置'),
   ];
 
   @override
@@ -54,6 +56,8 @@ class AdminScreen extends StatelessWidget {
       'content': '内容管理',
       'users': '用户管理',
       'bars': '贴吧管理',
+      'operations': '公告与任务',
+      'settings': '社区设置',
     };
 
     Widget? action;
@@ -66,13 +70,15 @@ class AdminScreen extends StatelessWidget {
       );
     } else if (tab == 'users') {
       action = QPill(text: '${store.stats()['total']} 人', style: QPillStyle.soft);
-    } else {
+    } else if (tab == 'bars') {
       action = QIconButton(
         icon: Icons.add_rounded,
         accent: true,
         iconSize: 19,
         onTap: () => _newBar(context),
       );
+    } else {
+      action = const QPill(text: '管理员', icon: Icons.shield_outlined);
     }
 
     return Column(
@@ -96,7 +102,7 @@ class AdminScreen extends StatelessWidget {
         Expanded(
           child: IndexedStack(
             index: () {
-              final i = ['overview', 'content', 'users', 'bars'].indexOf(tab);
+              final i = ['overview', 'content', 'users', 'bars', 'operations', 'settings'].indexOf(tab);
               return i < 0 ? 0 : i;
             }(),
             children: [
@@ -121,6 +127,8 @@ class AdminScreen extends StatelessWidget {
                 bottomInset: bottomInset,
                 onNewBar: () => _newBar(context),
               ),
+              _OperationsTab(bottomInset: bottomInset),
+              _SettingsTab(bottomInset: bottomInset),
             ],
           ),
         ),
@@ -218,8 +226,19 @@ class _OverviewTab extends StatelessWidget {
         .where((p) => DateTime.now().millisecondsSinceEpoch - p.createdAt < 86400000)
         .length;
     final recent = store.posts(limit: 4);
-    const chart = [42, 58, 48, 72, 60, 86, 68];
-    const labels = ['一', '二', '三', '四', '五', '六', '日'];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final daily = List.generate(7, (index) {
+      final day = today.subtract(Duration(days: 6 - index));
+      final next = day.add(const Duration(days: 1));
+      final count = store.posts().where((post) =>
+          post.createdAt >= day.millisecondsSinceEpoch &&
+          post.createdAt < next.millisecondsSinceEpoch).length;
+      final labels = ['一', '二', '三', '四', '五', '六', '日'];
+      return (label: labels[day.weekday - 1], count: count);
+    });
+    final maxDaily = daily.fold<int>(0, (max, item) => item.count > max ? item.count : max);
+    final totalDaily = daily.fold<int>(0, (sum, item) => sum + item.count);
 
     return ListView(
       padding: EdgeInsets.fromLTRB(18, 6, 18, 34 + bottomInset),
@@ -349,7 +368,7 @@ class _OverviewTab extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    '近 7 日活跃',
+                    '近 7 日发帖',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -358,7 +377,7 @@ class _OverviewTab extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    '示意数据',
+                    '共 $totalDaily 条',
                     style: TextStyle(fontSize: 10.5, color: t.text3),
                   ),
                 ],
@@ -369,14 +388,21 @@ class _OverviewTab extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    for (var i = 0; i < chart.length; i++)
+                    for (var i = 0; i < daily.length; i++)
                       Expanded(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
+                            Text(
+                              '${daily[i].count}',
+                              style: TextStyle(fontSize: 8.5, color: t.text3),
+                            ),
+                            const SizedBox(height: 3),
                             Container(
                               width: 22,
-                              height: chart[i] * .62,
+                              height: daily[i].count == 0
+                                  ? 3
+                                  : 8 + (daily[i].count / (maxDaily == 0 ? 1 : maxDaily)) * 38,
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   begin: Alignment.topCenter,
@@ -396,7 +422,7 @@ class _OverviewTab extends StatelessWidget {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              labels[i],
+                              daily[i].label,
                               style: TextStyle(fontSize: 9, color: t.text3),
                             ),
                           ],
@@ -925,6 +951,33 @@ class _UsersTabState extends State<_UsersTab> {
     }
   }
 
+  Future<void> _grantTitle(AppUser user) async {
+    final app = AppScope.of(context);
+    final data = await showQForm(
+      context,
+      title: '授予专属称号',
+      desc: '当前称号：${user.grantedTitle.isEmpty ? '无' : user.grantedTitle}。留空可取消称号。',
+      fields: [
+        QFormFieldSpec(
+          name: 'title',
+          label: '称号',
+          initialValue: user.grantedTitle,
+          hint: '例如：校园先锋',
+          required: false,
+          maxLength: 12,
+        ),
+      ],
+      confirmText: '保存',
+    );
+    if (data == null || !mounted) return;
+    try {
+      await app.store.grantTitle(user.id, data['title'] ?? '');
+      app.toast('称号已更新', type: ToastType.success);
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
   Future<void> _resetPassword(AppUser user) async {
     final app = AppScope.of(context);
     final data = await showQForm(
@@ -1083,7 +1136,7 @@ class _UsersTabState extends State<_UsersTab> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: t.text,
+                                    color: parseHexColor(user.nameColor) ?? t.text,
                                   ),
                                 ),
                               ),
@@ -1093,6 +1146,10 @@ class _UsersTabState extends State<_UsersTab> {
                                   text: '管理员',
                                   icon: Icons.shield_outlined,
                                 ),
+                              ],
+                              if (user.title.isNotEmpty) ...[
+                                const SizedBox(width: 5),
+                                QTitleBadge(title: user.title),
                               ],
                               if (user.banned) ...[
                                 const SizedBox(width: 5),
@@ -1125,6 +1182,13 @@ class _UsersTabState extends State<_UsersTab> {
                             '@${user.username} · 加入 ${daysSince(user.joinedAt)} 天',
                             style: TextStyle(fontSize: 10.5, color: t.text3),
                           ),
+                          if (user.realName.isNotEmpty || user.className.isNotEmpty)
+                            Text(
+                              '${user.className}${user.className.isNotEmpty && user.realName.isNotEmpty ? ' · ' : ''}${user.realName}${user.showProfile ? ' · 公开' : ' · 不公开'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 10, color: t.text3),
+                            ),
                         ],
                       ),
                     ),
@@ -1154,6 +1218,12 @@ class _UsersTabState extends State<_UsersTab> {
                       label: '修改密码',
                       onTap: () => _resetPassword(user),
                     ),
+                    const SizedBox(width: 7),
+                    _TinyButton(
+                      icon: Icons.workspace_premium_outlined,
+                      label: '称号',
+                      onTap: () => _grantTitle(user),
+                    ),
                   ],
                 ),
               ],
@@ -1166,6 +1236,385 @@ class _UsersTabState extends State<_UsersTab> {
             title: '没有匹配的用户',
             desc: '换个关键词或筛选条件试试',
           ),
+      ],
+    );
+  }
+}
+
+/* ============================================================
+   公告 / 每日任务
+   ============================================================ */
+
+class _OperationsTab extends StatelessWidget {
+  const _OperationsTab({required this.bottomInset});
+
+  final double bottomInset;
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'login':
+        return '登录';
+      case 'post':
+        return '发帖';
+      case 'comment':
+        return '评论';
+      case 'like':
+        return '点赞';
+      default:
+        return '打卡';
+    }
+  }
+
+  Future<void> _addAnnouncement(BuildContext context) async {
+    final app = AppScope.of(context);
+    final data = await showQForm(
+      context,
+      title: '发布公告',
+      desc: '重要公告会在用户进入软件时弹窗展示，需阅读 3 秒后才能关闭。',
+      fields: const [
+        QFormFieldSpec(name: 'title', label: '公告标题', hint: '例如：本周校园活动安排', maxLength: 30),
+        QFormFieldSpec(name: 'content', label: '公告内容', hint: '写清楚时间、地点和注意事项', multiline: true, maxLength: 2000),
+        QFormFieldSpec(
+          name: 'important',
+          label: '公告类型',
+          initialValue: '0',
+          options: [QFormOption('0', '普通公告'), QFormOption('1', '重要公告（弹窗）')],
+        ),
+      ],
+      confirmText: '发布',
+    );
+    if (data == null || !context.mounted) return;
+    try {
+      await app.store.addAnnouncement(
+        title: data['title'] ?? '',
+        content: data['content'] ?? '',
+        important: data['important'] == '1',
+      );
+      app.toast('公告已发布', type: ToastType.success);
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Future<void> _deleteAnnouncement(BuildContext context, Announcement item) async {
+    final app = AppScope.of(context);
+    final ok = await showQConfirm(
+      context,
+      title: '删除这条公告？',
+      desc: '「${item.title}」删除后用户将不再看到。',
+      confirmText: '删除',
+      danger: true,
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      await app.store.deleteAnnouncement(item.id);
+      app.toast('公告已删除', type: ToastType.success);
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Future<void> _addTask(BuildContext context) async {
+    final app = AppScope.of(context);
+    final data = await showQForm(
+      context,
+      title: '新增每日任务',
+      desc: '登录、发帖、评论、点赞会在完成操作后自动发放积分；打卡任务需要用户手动领取。',
+      fields: const [
+        QFormFieldSpec(name: 'title', label: '任务名称', hint: '例如：发布一条帖子', maxLength: 20),
+        QFormFieldSpec(name: 'description', label: '任务说明', hint: '简单说明如何完成', required: false, maxLength: 60),
+        QFormFieldSpec(
+          name: 'type',
+          label: '任务类型',
+          initialValue: 'manual',
+          options: [
+            QFormOption('login', '每日登录'),
+            QFormOption('post', '发布帖子'),
+            QFormOption('comment', '发表评论'),
+            QFormOption('like', '点赞'),
+            QFormOption('manual', '手动打卡'),
+          ],
+        ),
+        QFormFieldSpec(name: 'points', label: '积分奖励', hint: '1 - 100', maxLength: 3),
+      ],
+      confirmText: '创建',
+    );
+    if (data == null || !context.mounted) return;
+    final points = int.tryParse((data['points'] ?? '').trim()) ?? 0;
+    if (points < 1 || points > 100) {
+      app.toast('积分需为 1 - 100 的整数', type: ToastType.error);
+      return;
+    }
+    try {
+      await app.store.addTask(
+        title: data['title'] ?? '',
+        description: data['description'] ?? '',
+        type: data['type'] ?? 'manual',
+        points: points,
+      );
+      app.toast('任务已创建', type: ToastType.success);
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  Future<void> _deleteTask(BuildContext context, DailyTask task) async {
+    final app = AppScope.of(context);
+    final ok = await showQConfirm(
+      context,
+      title: '删除这个任务？',
+      desc: '「${task.title}」删除后将不再出现在用户的任务中心。',
+      confirmText: '删除',
+      danger: true,
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      await app.store.deleteTask(task.id);
+      app.toast('任务已删除', type: ToastType.success);
+    } on StoreException catch (e) {
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final store = app.store;
+    final t = QColors.of(context);
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(18, 0, 18, 34 + bottomInset),
+      children: [
+        Row(
+          children: [
+            Text('公告与广播', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.text)),
+            const Spacer(),
+            QTextButton(label: '+ 发布公告', onTap: () => _addAnnouncement(context)),
+          ],
+        ),
+        if (store.announcements.isEmpty)
+          QCard(
+            child: Text(
+              '还没有公告，发布一条重要公告后用户进入软件会看到弹窗。',
+              style: TextStyle(fontSize: 11.5, height: 1.6, color: t.text3),
+            ),
+          )
+        else
+          for (final item in store.announcements) ...[
+            QCard(
+              padding: const EdgeInsets.all(13),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: t.text),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      if (item.important)
+                        const QPill(text: '重要', style: QPillStyle.danger)
+                      else
+                        const QPill(text: '普通', style: QPillStyle.soft),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.content,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10.5, height: 1.55, color: t.text3),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(timeAgo(item.createdAt), style: TextStyle(fontSize: 9.5, color: t.text3)),
+                      const Spacer(),
+                      _TinyButton(
+                        icon: Icons.delete_outline_rounded,
+                        label: '删除',
+                        danger: true,
+                        onTap: () => _deleteAnnouncement(context, item),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 9),
+          ],
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Text('每日任务', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.text)),
+            const Spacer(),
+            QTextButton(label: '+ 新增任务', onTap: () => _addTask(context)),
+          ],
+        ),
+        if (store.tasks.isEmpty)
+          QCard(
+            child: Text(
+              '还没有每日任务，新增后用户可以在任务中心获取积分。',
+              style: TextStyle(fontSize: 11.5, height: 1.6, color: t.text3),
+            ),
+          )
+        else
+          for (final task in store.tasks) ...[
+            QCard(
+              padding: const EdgeInsets.all(13),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                task.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: t.text),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            QPill(text: _typeLabel(task.type), style: QPillStyle.soft),
+                            const SizedBox(width: 5),
+                            QPill(text: '+${task.points}', style: QPillStyle.brand),
+                          ],
+                        ),
+                        if (task.description.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            task.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 10.5, color: t.text3),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _TinyButton(
+                    icon: Icons.delete_outline_rounded,
+                    label: '删除',
+                    danger: true,
+                    onTap: () => _deleteTask(context, task),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 9),
+          ],
+        const SizedBox(height: 6),
+        Text(
+          '积分商店中的头像框、昵称颜色和称号为固定装扮；专属称号可在用户管理中单独授予。',
+          style: TextStyle(fontSize: 10.5, height: 1.6, color: t.text3),
+        ),
+      ],
+    );
+  }
+}
+
+/* ============================================================
+   社区设置
+   ============================================================ */
+
+class _SettingsTab extends StatefulWidget {
+  const _SettingsTab({required this.bottomInset});
+
+  final double bottomInset;
+
+  @override
+  State<_SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends State<_SettingsTab> {
+  late final TextEditingController _about;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final app = context.getInheritedWidgetOfExactType<AppScope>()!.notifier!;
+    _about = TextEditingController(text: app.store.aboutText);
+  }
+
+  @override
+  void dispose() {
+    _about.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final app = AppScope.of(context);
+    setState(() => _saving = true);
+    try {
+      await app.store.updateSettings(_about.text.trim());
+      if (!mounted) return;
+      setState(() => _saving = false);
+      app.toast('关于文案已更新', type: ToastType.success);
+    } on StoreException catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      app.toast(e.message, type: ToastType.error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final store = app.store;
+    final t = QColors.of(context);
+    return ListView(
+      padding: EdgeInsets.fromLTRB(18, 0, 18, 34 + widget.bottomInset),
+      children: [
+        Text(
+          '关于乌市职专墙',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.text),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '这段文案会显示在「我的 → 关于乌市职专墙」。',
+          style: TextStyle(fontSize: 11, color: t.text3),
+        ),
+        const SizedBox(height: 12),
+        QTextArea(
+          controller: _about,
+          hint: '写一段社区介绍…',
+          maxLength: 2000,
+          minHeight: 220,
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: t.field,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: t.line),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline_rounded, size: 17, color: t.text3),
+              const SizedBox(width: 8),
+              Text('当前版本：${store.version}（固定）', style: TextStyle(fontSize: 11.5, color: t.text2)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        QButton(
+          label: _saving ? '保存中…' : '保存设置',
+          icon: Icons.check_rounded,
+          onTap: _saving ? null : _save,
+        ),
       ],
     );
   }
@@ -1262,7 +1711,7 @@ class _BarsTab extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${store.countPosts(bar.id)} 帖子 · ${bar.members} 成员',
+                          '${store.countPosts(bar.id)} 帖子 · ${store.memberCount(bar.id)} 位同学',
                           style: TextStyle(fontSize: 10, color: t.text3),
                         ),
                       ],
@@ -1386,28 +1835,19 @@ class _TinyButton extends StatelessWidget {
 
 Future<void> _newBar(BuildContext context) async {
   final app = AppScope.of(context);
-  final mods = app.store.modules;
   final data = await showQForm(
     context,
     title: '新建贴吧',
-    desc: '选择所属模块，并填写贴吧名称与介绍。',
-    fields: [
+    desc: '填写贴吧名称和介绍即可创建。',
+    fields: const [
       QFormFieldSpec(
-        name: 'module',
-        label: '所属模块',
-        initialValue: mods.first.key,
-        options: [
-          for (final mod in mods) QFormOption(mod.key, mod.label),
-        ],
-      ),
-      const QFormFieldSpec(
         name: 'name',
         label: '贴吧名称',
         hint: '例如：二手交易吧',
         minLength: 2,
         maxLength: 12,
       ),
-      const QFormFieldSpec(
+      QFormFieldSpec(
         name: 'desc',
         label: '一句介绍',
         hint: '这个贴吧是做什么的？',
@@ -1420,7 +1860,6 @@ Future<void> _newBar(BuildContext context) async {
   if (data == null || !context.mounted) return;
   try {
     await app.store.addBar(
-      module: data['module'] ?? mods.first.key,
       name: data['name'] ?? '',
       desc: data['desc'],
     );
@@ -1432,20 +1871,11 @@ Future<void> _newBar(BuildContext context) async {
 
 Future<void> _editBar(BuildContext context, DiscussionBar bar) async {
   final app = AppScope.of(context);
-  final mods = app.store.modules;
   final data = await showQForm(
     context,
     title: '编辑贴吧',
-    desc: '可以修改名称、介绍或所属模块。',
+    desc: '可以修改贴吧名称和介绍。',
     fields: [
-      QFormFieldSpec(
-        name: 'module',
-        label: '所属模块',
-        initialValue: bar.module,
-        options: [
-          for (final mod in mods) QFormOption(mod.key, mod.label),
-        ],
-      ),
       QFormFieldSpec(
         name: 'name',
         label: '贴吧名称',
@@ -1467,7 +1897,6 @@ Future<void> _editBar(BuildContext context, DiscussionBar bar) async {
   try {
     await app.store.updateBar(
       bar.id,
-      module: data['module'] ?? bar.module,
       name: data['name'] ?? bar.name,
       desc: data['desc'],
     );

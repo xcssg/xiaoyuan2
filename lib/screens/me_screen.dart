@@ -25,26 +25,6 @@ class MeScreen extends StatelessWidget {
     app.toast('已退出登录');
   }
 
-  void _accountInfo(BuildContext context) {
-    final app = AppScope.of(context);
-    final u = app.store.current;
-    if (u == null) return;
-    final days = daysSince(u.joinedAt);
-    showQDialog(
-      context,
-      title: '账号信息',
-      content: Column(
-        children: [
-          _InfoRow(label: '昵称', value: u.nickname),
-          _InfoRow(label: '账号', value: u.username),
-          _InfoRow(label: '身份', value: u.isAdmin ? '管理员' : '学生用户'),
-          _InfoRow(label: '加入时间', value: '${dateStr(u.joinedAt)}（$days 天）'),
-          _InfoRow(label: '账号状态', value: u.banned ? '已封禁' : '正常'),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
@@ -57,6 +37,9 @@ class MeScreen extends StatelessWidget {
     final likes = store.myLikes(u.id);
     final days = daysSince(u.joinedAt);
     final theme = app.isDark;
+    final titleColor = parseHexColor(u.nameColor) ?? t.text;
+    final doneTasks = store.tasks.where((task) => task.claimed).length;
+    final ownedItems = store.shopItems.where((item) => item.owned).length;
 
     return Column(
       children: [
@@ -126,7 +109,7 @@ class MeScreen extends StatelessWidget {
                                               style: TextStyle(
                                                 fontSize: 19,
                                                 fontWeight: FontWeight.w700,
-                                                color: t.text,
+                                                color: titleColor,
                                                 letterSpacing: -.4,
                                               ),
                                             ),
@@ -138,6 +121,10 @@ class MeScreen extends StatelessWidget {
                                               icon: Icons.shield_outlined,
                                             ),
                                           ],
+                                          if (u.title.isNotEmpty) ...[
+                                            const SizedBox(width: 6),
+                                            QTitleBadge(title: u.title),
+                                          ],
                                         ],
                                       ),
                                       const SizedBox(height: 4),
@@ -145,12 +132,32 @@ class MeScreen extends StatelessWidget {
                                         '@${u.username} · 加入 $days 天',
                                         style: TextStyle(fontSize: 11.5, color: t.text3),
                                       ),
+                                      if (u.className.isNotEmpty || u.realName.isNotEmpty) ...[
+                                        const SizedBox(height: 5),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.school_outlined, size: 12, color: t.text3),
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                '${u.className}${u.className.isNotEmpty && u.realName.isNotEmpty ? ' · ' : ''}${u.realName}${u.showProfile ? '' : ' · 仅自己可见'}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(fontSize: 11, color: t.text2),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
-                                QPill(
-                                  text: u.online ? '在线' : '离线',
-                                  style: u.online ? QPillStyle.ok : QPillStyle.soft,
+                                Pressable(
+                                  onTap: () => app.navigate(AppRoute.editProfile),
+                                  child: const QPill(
+                                    text: '编辑资料',
+                                    icon: Icons.edit_outlined,
+                                  ),
                                 ),
                               ],
                             ),
@@ -172,7 +179,7 @@ class MeScreen extends StatelessWidget {
                                 Container(width: 1, height: 30, color: t.line),
                                 _ProfileStat(value: '$likes', label: '获赞'),
                                 Container(width: 1, height: 30, color: t.line),
-                                _ProfileStat(value: '$days', label: '加入天数'),
+                                _ProfileStat(value: '${u.points}', label: '积分'),
                               ],
                             ),
                           ],
@@ -250,53 +257,13 @@ class MeScreen extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 14),
-              QCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          '外观主题',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: t.text,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '白天 / 夜晚',
-                          style: TextStyle(fontSize: 10.5, color: t.text3),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ThemeCard(
-                            night: false,
-                            active: !theme,
-                            title: '白天模式',
-                            desc: '蓝白 · 清爽明亮',
-                            onTap: () => app.setDark(false),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _ThemeCard(
-                            night: true,
-                            active: theme,
-                            title: '夜晚模式',
-                            desc: '黑灰 · 低光护眼',
-                            onTap: () => app.setDark(true),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              _GrowthCard(
+                points: u.points,
+                doneTasks: doneTasks,
+                totalTasks: store.tasks.length,
+                ownedItems: ownedItems,
+                onTasks: () => app.navigate(AppRoute.tasks),
+                onShop: () => app.navigate(AppRoute.shop),
               ),
               QSectionHead(
                 title: '我的帖子',
@@ -338,20 +305,20 @@ class MeScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     _MenuRow(
-                      icon: Icons.person_outline_rounded,
-                      title: '账号信息',
-                      subtitle: '查看账号与权限详情',
-                      onTap: () => _accountInfo(context),
+                      icon: Icons.manage_accounts_outlined,
+                      title: '编辑资料',
+                      subtitle: '头像 · 昵称 · 班级 · 装扮',
+                      onTap: () => app.navigate(AppRoute.editProfile),
                     ),
                     _MenuRow(
                       icon: Icons.info_outline_rounded,
                       title: '关于乌市职专墙',
-                      subtitle: '版本 0.1',
+                      subtitle: '版本 ${store.version}',
                       color: t.warn,
                       onTap: () => showQDialog(
                         context,
                         title: '关于乌市职专墙',
-                        desc: '乌市职专墙是面向校园的互助社区，包含寻物、吐槽、表白、找人四个模块。\n\n当前为联网版本，账号与内容保存在学校社区服务器。\n\nVERSION 0.1 · CAMPUS WALL',
+                        desc: '${store.aboutText}\n\n${store.version} · CAMPUS WALL',
                       ),
                     ),
                     _MenuRow(
@@ -368,7 +335,7 @@ class MeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Text(
-                '乌市职专墙 CAMPUS WALL · V0.1',
+                '乌市职专墙 CAMPUS WALL · ${store.version}',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 10,
@@ -380,6 +347,161 @@ class MeScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _GrowthCard extends StatelessWidget {
+  const _GrowthCard({
+    required this.points,
+    required this.doneTasks,
+    required this.totalTasks,
+    required this.ownedItems,
+    required this.onTasks,
+    required this.onShop,
+  });
+
+  final int points;
+  final int doneTasks;
+  final int totalTasks;
+  final int ownedItems;
+  final VoidCallback onTasks;
+  final VoidCallback onShop;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = QColors.of(context);
+    return QCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  gradient: t.brandGradient,
+                  borderRadius: BorderRadius.circular(13),
+                  boxShadow: t.brandShadow,
+                ),
+                child: const Icon(Icons.auto_awesome_rounded, size: 19, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '成长中心',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: t.text),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '完成任务赚积分，兑换头像框、昵称颜色和称号',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10.5, color: t.text3),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '$points',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: t.brand,
+                      letterSpacing: -.5,
+                    ),
+                  ),
+                  Text('积分', style: TextStyle(fontSize: 10, color: t.text3)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _GrowthButton(
+                  icon: Icons.task_alt_rounded,
+                  title: '每日任务',
+                  subtitle: totalTasks == 0 ? '暂无任务' : '$doneTasks / $totalTasks 已完成',
+                  onTap: onTasks,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _GrowthButton(
+                  icon: Icons.storefront_outlined,
+                  title: '积分商店',
+                  subtitle: '已拥有 $ownedItems 件装扮',
+                  onTap: onShop,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GrowthButton extends StatelessWidget {
+  const _GrowthButton({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = QColors.of(context);
+    return Pressable(
+      onTap: onTap,
+      scale: .97,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: t.field,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: t.line),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: t.brand),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.text),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 9.5, color: t.text3),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -410,164 +532,6 @@ class _ProfileStat extends StatelessWidget {
             style: TextStyle(fontSize: 10.5, color: t.text3),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = QColors.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 62,
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 12.5, color: t.text3),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-                color: t.text,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ThemeCard extends StatelessWidget {
-  const _ThemeCard({
-    required this.night,
-    required this.active,
-    required this.title,
-    required this.desc,
-    required this.onTap,
-  });
-
-  final bool night;
-  final bool active;
-  final String title;
-  final String desc;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = QColors.of(context);
-    return Pressable(
-      onTap: onTap,
-      scale: .97,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: active ? t.brand.withOpacity(.07) : t.field,
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(
-            color: active ? t.brand : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 62,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: night
-                      ? const [Color(0xFF12151C), Color(0xFF1E222C)]
-                      : const [Color(0xFFF2F7FF), Color(0xFFDCEAFF)],
-                ),
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: Colors.black.withOpacity(.06)),
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    top: 10,
-                    height: 9,
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: .46,
-                      child: _PreviewBar(night: night, opacity: .22),
-                    ),
-                  ),
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    top: 25,
-                    height: 9,
-                    child: _PreviewBar(night: night),
-                  ),
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    top: 40,
-                    height: 9,
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: .62,
-                      child: _PreviewBar(night: night, opacity: .12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: t.text,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              desc,
-              style: TextStyle(fontSize: 10, color: t.text3),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PreviewBar extends StatelessWidget {
-  const _PreviewBar({required this.night, this.opacity = 0});
-
-  final bool night;
-  final double opacity;
-
-  @override
-  Widget build(BuildContext context) {
-    final base = night ? Colors.white : const Color(0xFF2F6BFF);
-    return Container(
-      decoration: BoxDecoration(
-        color: base.withOpacity(opacity > 0 ? opacity : (night ? .16 : .22)),
-        borderRadius: BorderRadius.circular(5),
       ),
     );
   }

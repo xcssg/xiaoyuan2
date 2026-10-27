@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_state.dart';
 import '../data/models.dart';
@@ -207,11 +208,12 @@ class _PressableState extends State<Pressable> {
    ============================================================ */
 
 class QAvatar extends StatelessWidget {
-  const QAvatar({super.key, this.user, this.size = 40, this.anonymous = false});
+  const QAvatar({super.key, this.user, this.size = 40, this.anonymous = false, this.frame});
 
   final AppUser? user;
   final double size;
   final bool anonymous;
+  final String? frame;
 
   @override
   Widget build(BuildContext context) {
@@ -219,9 +221,13 @@ class QAvatar extends StatelessWidget {
     final name = anonymous ? '匿' : (user?.nickname.isNotEmpty == true ? user!.nickname : '?');
     final idx = anonymous ? 5 : ((user?.avatar ?? 0) % t.avatarGradients.length);
     final initial = name.characters.first;
-    return Container(
-      width: size,
-      height: size,
+    final frameStyle = anonymous ? '' : (frame ?? user?.avatarFrame ?? '');
+    final hasFrame = frameStyle.isNotEmpty;
+    final innerSize = hasFrame ? size - 5 : size;
+
+    final avatar = Container(
+      width: innerSize,
+      height: innerSize,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
@@ -232,9 +238,86 @@ class QAvatar extends StatelessWidget {
         initial,
         style: TextStyle(
           color: Colors.white,
-          fontSize: size * .4,
+          fontSize: innerSize * .4,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+
+    if (!hasFrame) return avatar;
+
+    final ring = _frameRing(frameStyle);
+    return Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(2.5),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: ring,
+        boxShadow: [
+          BoxShadow(
+            color: (ring.colors.first).withOpacity(.32),
+            blurRadius: 10,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: avatar,
+    );
+  }
+}
+
+LinearGradient _frameRing(String frame) {
+  switch (frame) {
+    case 'gold':
+      return const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFF5B301), Color(0xFFD97706)]);
+    case 'neon':
+      return const LinearGradient(colors: [Color(0xFF22D3EE), Color(0xFFA855F7)]);
+    case 'sakura':
+      return const LinearGradient(colors: [Color(0xFFFF9AC1), Color(0xFFFFD1E3)]);
+    case 'tech':
+      return const LinearGradient(colors: [Color(0xFF34D399), Color(0xFF22D3EE)]);
+    default:
+      return const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF2F6BFF)]);
+  }
+}
+
+class QTitleBadge extends StatelessWidget {
+  const QTitleBadge({super.key, required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    if (title.isEmpty) return const SizedBox.shrink();
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 96),
+      height: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFFFFF3C4), Color(0xFFFFE08A)]),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFFF5B301).withOpacity(.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.workspace_premium_rounded, size: 10, color: Color(0xFFB45309)),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF8A4B08),
+                height: 1,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1049,6 +1132,7 @@ class QPostCard extends StatelessWidget {
     final mod = store.moduleOf(bar?.module ?? 'lost');
     final author = store.getUser(post.authorId);
     final displayName = post.anonymous ? '匿名同学' : (author?.nickname ?? '已注销用户');
+    final nameColor = post.anonymous ? null : parseHexColor(author?.nameColor ?? '');
     final liked = store.isLiked(post.id);
     return Pressable(
       onTap: onTap,
@@ -1082,13 +1166,17 @@ class QPostCard extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: t.text,
+                                color: nameColor ?? t.text,
                               ),
                             ),
                           ),
                           if (post.anonymous) ...[
                             const SizedBox(width: 5),
                             const QPill(text: '匿名', style: QPillStyle.soft),
+                          ],
+                          if (!post.anonymous && author != null && author.title.isNotEmpty) ...[
+                            const SizedBox(width: 5),
+                            QTitleBadge(title: author.title),
                           ],
                         ],
                       ),
@@ -1297,7 +1385,7 @@ class QBarRow extends StatelessWidget {
                     children: [
                       _BarStat(value: '${store.countPosts(bar.id)}', label: '帖子'),
                       const SizedBox(width: 12),
-                      _BarStat(value: '${bar.members}', label: '成员'),
+                      _BarStat(value: '${store.memberCount(bar.id)}', label: '位同学'),
                     ],
                   ),
                 ],
@@ -1352,6 +1440,12 @@ class QDock extends StatelessWidget {
     final t = QColors.of(context);
     final route = app.route;
     final unread = app.store.unreadCount;
+    int activeIndex = -1;
+    if (route.name == 'home') activeIndex = 0;
+    if (route.name == 'bars' || route.name == 'bar' || route.name == 'search') activeIndex = 1;
+    if (route.name == 'messages') activeIndex = 2;
+    if (route.name == 'me') activeIndex = 3;
+
     return SizedBox(
       height: 77,
       child: Stack(
@@ -1395,68 +1489,105 @@ class QDock extends StatelessWidget {
             right: 0,
             bottom: 0,
             height: 68,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  _DockItem(
-                    icon: Icons.home_outlined,
-                    filledIcon: Icons.home_rounded,
-                    label: '首页',
-                    active: route.name == 'home',
-                    onTap: () => app.navigate(AppRoute.home),
-                  ),
-                  _DockItem(
-                    icon: Icons.explore_outlined,
-                    filledIcon: Icons.explore_rounded,
-                    label: '贴吧',
-                    active: route.name == 'bars' ||
-                        route.name == 'bar' ||
-                        route.name == 'search',
-                    onTap: () => app.navigate(AppRoute.bars),
-                  ),
-                  const SizedBox(width: 4),
-                  Pressable(
-                    onTap: () => app.navigate(AppRoute.compose),
-                    scale: .93,
-                    child: Transform.translate(
-                      offset: const Offset(0, -9),
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: t.fabGradient,
-                          boxShadow: [
-                            BoxShadow(
-                              color: t.brand.withOpacity(.45),
-                              blurRadius: 22,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = (constraints.maxWidth - 80) / 4;
+                final indicatorLeft = activeIndex < 0
+                    ? null
+                    : 10 + activeIndex * itemWidth + (activeIndex >= 2 ? 60 : 0);
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    if (indicatorLeft != null)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic,
+                        left: indicatorLeft,
+                        top: 9,
+                        width: itemWidth,
+                        height: 50,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: t.brand.withOpacity(t.dark ? .14 : .10),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: t.brand.withOpacity(.08)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: t.brand.withOpacity(.10),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
                         ),
-                        child: const Icon(Icons.add_rounded, size: 26, color: Colors.white),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        children: [
+                          _DockItem(
+                            icon: Icons.home_outlined,
+                            filledIcon: Icons.home_rounded,
+                            label: '首页',
+                            active: activeIndex == 0,
+                            onTap: () => app.navigate(AppRoute.home),
+                          ),
+                          _DockItem(
+                            icon: Icons.explore_outlined,
+                            filledIcon: Icons.explore_rounded,
+                            label: '贴吧',
+                            active: activeIndex == 1,
+                            onTap: () => app.navigate(AppRoute.bars),
+                          ),
+                          const SizedBox(width: 4),
+                          Pressable(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              app.navigate(AppRoute.compose);
+                            },
+                            scale: .93,
+                            child: Transform.translate(
+                              offset: const Offset(0, -9),
+                              child: Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: t.fabGradient,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: t.brand.withOpacity(.45),
+                                      blurRadius: 22,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(Icons.add_rounded, size: 26, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          _DockItem(
+                            icon: Icons.chat_bubble_outline_rounded,
+                            filledIcon: Icons.chat_bubble_rounded,
+                            label: '消息',
+                            active: activeIndex == 2,
+                            unread: unread > 0,
+                            onTap: () => app.navigate(AppRoute.messages),
+                          ),
+                          _DockItem(
+                            icon: Icons.person_outline_rounded,
+                            filledIcon: Icons.person_rounded,
+                            label: '我的',
+                            active: activeIndex == 3,
+                            onTap: () => app.navigate(AppRoute.me),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  _DockItem(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    filledIcon: Icons.chat_bubble_rounded,
-                    label: '消息',
-                    active: route.name == 'messages',
-                    unread: unread > 0,
-                    onTap: () => app.navigate(AppRoute.messages),
-                  ),
-                  _DockItem(
-                    icon: Icons.person_outline_rounded,
-                    filledIcon: Icons.person_rounded,
-                    label: '我的',
-                    active: route.name == 'me',
-                    onTap: () => app.navigate(AppRoute.me),
-                  ),
-                ],
-              ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -1488,27 +1619,31 @@ class _DockItem extends StatelessWidget {
     final fg = active ? (t.dark ? t.brand2 : t.brand) : t.text3;
     return Expanded(
       child: Pressable(
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
         scale: .92,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+        child: Container(
           height: 50,
           margin: const EdgeInsets.symmetric(horizontal: 1),
-          decoration: BoxDecoration(
-            color: active ? t.brand.withOpacity(t.dark ? .14 : .10) : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
-          ),
           child: Stack(
             alignment: Alignment.center,
             children: [
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(active ? filledIcon : icon, size: 21, color: fg),
+                  AnimatedScale(
+                    scale: active ? 1.10 : 1,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutBack,
+                    child: Icon(active ? filledIcon : icon, size: 21, color: fg),
+                  ),
                   const SizedBox(height: 2),
-                  Text(
-                    label,
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 200),
                     style: TextStyle(fontSize: 9, color: fg, letterSpacing: .3),
+                    child: Text(label),
                   ),
                 ],
               ),

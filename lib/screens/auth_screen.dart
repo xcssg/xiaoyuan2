@@ -16,17 +16,27 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   final _nickname = TextEditingController();
+  final _realName = TextEditingController();
+  final _className = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _captcha = TextEditingController();
   String _tab = 'login';
   String? _error;
   bool _busy = false;
+  bool _showProfile = false;
+  String _captchaQuestion = '';
+  String _captchaToken = '';
+  bool _captchaLoading = false;
 
   @override
   void dispose() {
     _nickname.dispose();
+    _realName.dispose();
+    _className.dispose();
     _username.dispose();
     _password.dispose();
+    _captcha.dispose();
     super.dispose();
   }
 
@@ -35,6 +45,32 @@ class _AuthScreenState extends State<AuthScreen> {
       _tab = tab;
       _error = null;
     });
+    if (tab == 'register' && _captchaToken.isEmpty) {
+      _loadCaptcha();
+    }
+  }
+
+  Future<void> _loadCaptcha() async {
+    if (_captchaLoading) return;
+    setState(() {
+      _captchaLoading = true;
+      _captchaQuestion = '';
+      _captchaToken = '';
+      _captcha.clear();
+    });
+    try {
+      final data = await AppScope.of(context).store.fetchCaptcha();
+      if (!mounted) return;
+      setState(() {
+        _captchaQuestion = data['question'] ?? '';
+        _captchaToken = data['token'] ?? '';
+        _captchaLoading = false;
+      });
+    } on StoreException catch (e) {
+      if (!mounted) return;
+      setState(() => _captchaLoading = false);
+      AppScope.of(context).toast(e.message, type: ToastType.error);
+    }
   }
 
   Future<void> _submit() async {
@@ -43,15 +79,30 @@ class _AuthScreenState extends State<AuthScreen> {
     final store = app.store;
     final username = _username.text.trim();
     final password = _password.text;
+    final register = _tab == 'register';
     if (username.isEmpty || password.isEmpty) {
       setState(() => _error = '请输入账号和密码');
       return;
     }
-    if (_tab == 'register' && _nickname.text.trim().isEmpty) {
-      setState(() => _error = '请填写昵称');
-      return;
+    if (register) {
+      if (_realName.text.trim().isEmpty) {
+        setState(() => _error = '请填写姓名');
+        return;
+      }
+      if (_className.text.trim().isEmpty) {
+        setState(() => _error = '请填写班级');
+        return;
+      }
+      if (_captchaToken.isEmpty) {
+        setState(() => _error = '验证码未加载，请点击刷新');
+        _loadCaptcha();
+        return;
+      }
+      if (_captcha.text.trim().isEmpty) {
+        setState(() => _error = '请输入验证码计算结果');
+        return;
+      }
     }
-    final register = _tab == 'register';
     setState(() {
       _busy = true;
       _error = null;
@@ -62,6 +113,11 @@ class _AuthScreenState extends State<AuthScreen> {
               username: username,
               password: password,
               nickname: _nickname.text.trim(),
+              realName: _realName.text.trim(),
+              className: _className.text.trim(),
+              showProfile: _showProfile,
+              captchaToken: _captchaToken,
+              captchaAnswer: _captcha.text.trim(),
             )
           : await store.login(username, password);
       if (!mounted) return;
@@ -78,6 +134,7 @@ class _AuthScreenState extends State<AuthScreen> {
         _error = e.message;
       });
       app.toast(e.message, type: ToastType.error);
+      if (register) _loadCaptcha();
     }
   }
 
@@ -189,8 +246,22 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SizedBox(height: 16),
                           if (!isLogin) ...[
                             QField(
+                              controller: _realName,
+                              hint: '真实姓名（仅用于身份登记）',
+                              icon: Icons.badge_outlined,
+                              maxLength: 20,
+                            ),
+                            const SizedBox(height: 11),
+                            QField(
+                              controller: _className,
+                              hint: '班级（例如 23计算机1班）',
+                              icon: Icons.school_outlined,
+                              maxLength: 20,
+                            ),
+                            const SizedBox(height: 11),
+                            QField(
                               controller: _nickname,
-                              hint: '昵称（展示给其他同学）',
+                              hint: '昵称（不填则使用姓名）',
                               icon: Icons.person_outline_rounded,
                               maxLength: 12,
                             ),
@@ -208,11 +279,97 @@ class _AuthScreenState extends State<AuthScreen> {
                             hint: isLogin ? '密码' : '密码（至少 6 位）',
                             icon: Icons.lock_outline_rounded,
                             obscure: true,
-                            textInputAction: TextInputAction.done,
+                            textInputAction: isLogin ? TextInputAction.done : TextInputAction.next,
                             onSubmitted: (_) {
-                              if (!_busy) _submit();
+                              if (isLogin && !_busy) _submit();
                             },
                           ),
+                          if (!isLogin) ...[
+                            const SizedBox(height: 11),
+                            Container(
+                              height: 52,
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              decoration: BoxDecoration(
+                                color: t.field,
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.calculate_outlined, size: 18, color: t.text3),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _captchaLoading
+                                          ? '正在获取验证码…'
+                                          : (_captchaQuestion.isEmpty ? '验证码加载失败' : _captchaQuestion),
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: _captchaQuestion.isEmpty ? t.text3 : t.text,
+                                      ),
+                                    ),
+                                  ),
+                                  Pressable(
+                                    onTap: _captchaLoading ? null : _loadCaptcha,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(4),
+                                      child: Icon(Icons.refresh_rounded, size: 19, color: t.brand),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 11),
+                            QField(
+                              controller: _captcha,
+                              hint: '输入计算结果',
+                              icon: Icons.verified_outlined,
+                              keyboardType: TextInputType.number,
+                              maxLength: 6,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) {
+                                if (!_busy) _submit();
+                              },
+                            ),
+                            const SizedBox(height: 11),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: t.field,
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.visibility_outlined, size: 18, color: t.text3),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '公开班级和姓名',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: t.text,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _showProfile ? '其他同学可以在资料里看到' : '仅管理员可见',
+                                          style: TextStyle(fontSize: 10.5, color: t.text3),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  QSwitch(
+                                    on: _showProfile,
+                                    onTap: () => setState(() => _showProfile = !_showProfile),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           if (_error != null) ...[
                             const SizedBox(height: 11),
                             Container(

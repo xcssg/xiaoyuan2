@@ -112,6 +112,7 @@ class _PostScreenState extends State<PostScreen> {
     final liked = store.isLiked(post.id);
     final canDelete = me != null && (me.isAdmin || post.authorId == me.id);
     final displayName = post.anonymous ? '匿名同学' : (author?.nickname ?? '已注销用户');
+    final authorNameColor = post.anonymous ? null : parseHexColor(author?.nameColor ?? '');
     final comments = List<PostComment>.from(post.comments)
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
@@ -175,7 +176,7 @@ class _PostScreenState extends State<PostScreen> {
                                       style: TextStyle(
                                         fontSize: 13.5,
                                         fontWeight: FontWeight.w600,
-                                        color: t.text,
+                                        color: authorNameColor ?? t.text,
                                       ),
                                     ),
                                   ),
@@ -186,6 +187,10 @@ class _PostScreenState extends State<PostScreen> {
                                   if (author?.banned == true) ...[
                                     const SizedBox(width: 5),
                                     const QPill(text: '已封禁', style: QPillStyle.danger),
+                                  ],
+                                  if (!post.anonymous && author != null && author.title.isNotEmpty) ...[
+                                    const SizedBox(width: 5),
+                                    QTitleBadge(title: author.title),
                                   ],
                                 ],
                               ),
@@ -287,28 +292,34 @@ class _PostScreenState extends State<PostScreen> {
                     const SizedBox(height: 14),
                     Row(
                       children: [
-                        _ActionButton(
-                          icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                          label: '${liked ? '已赞' : '点赞'} ${post.likes}',
-                          active: liked,
-                          onTap: () async {
-                            try {
-                              await store.toggleLike(post.id);
-                            } on StoreException catch (e) {
-                              app.toast(e.message, type: ToastType.error);
-                            }
-                          },
+                        Expanded(
+                          child: _ActionButton(
+                            icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                            label: '${liked ? '已赞' : '点赞'} ${post.likes}',
+                            active: liked,
+                            onTap: () async {
+                              try {
+                                await store.toggleLike(post.id);
+                              } on StoreException catch (e) {
+                                app.toast(e.message, type: ToastType.error);
+                              }
+                            },
+                          ),
                         ),
-                        const SizedBox(width: 10),
-                        _ActionButton(
-                          icon: Icons.chat_bubble_outline_rounded,
-                          label: '${post.comments.length} 条评论',
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _ActionButton(
+                            icon: Icons.chat_bubble_outline_rounded,
+                            label: '评论 ${post.comments.length}',
+                          ),
                         ),
-                        const Spacer(),
-                        _ActionButton(
-                          icon: Icons.send_rounded,
-                          label: '分享',
-                          onTap: () => app.toast('分享链接已复制', type: ToastType.success),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _ActionButton(
+                            icon: Icons.send_rounded,
+                            label: '分享',
+                            onTap: () => app.toast('分享链接已复制', type: ToastType.success),
+                          ),
                         ),
                       ],
                     ),
@@ -451,22 +462,27 @@ class _ActionButton extends StatelessWidget {
       onTap: onTap,
       scale: .96,
       child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: active ? t.dangerSoft : t.field,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(11),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 15, color: active ? t.danger : t.text2),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: active ? t.danger : t.text2,
+            Icon(icon, size: 14, color: active ? t.danger : t.text2),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: active ? t.danger : t.text2,
+                ),
               ),
             ),
           ],
@@ -504,14 +520,22 @@ class _CommentTile extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(
-                      user?.nickname ?? '已注销用户',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: t.text,
+                    Flexible(
+                      child: Text(
+                        user?.nickname ?? '已注销用户',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: parseHexColor(user?.nameColor ?? '') ?? t.text,
+                        ),
                       ),
                     ),
+                    if (user != null && user.title.isNotEmpty) ...[
+                      const SizedBox(width: 5),
+                      QTitleBadge(title: user.title),
+                    ],
                     const SizedBox(width: 7),
                     Text(
                       timeAgo(comment.createdAt),

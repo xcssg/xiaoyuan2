@@ -44,12 +44,24 @@ class Store extends ChangeNotifier {
       icon: 'users',
       color: Color(0xFF14B8A6),
     ),
+    CampusModule(
+      key: 'general',
+      name: '综合',
+      label: '综合板块',
+      desc: '没有归类的贴吧都在这里',
+      icon: 'grid',
+      color: Color(0xFF64748B),
+    ),
   ];
 
   List<AppUser> _users = [];
   List<DiscussionBar> _bars = [];
   List<Post> _posts = [];
   List<AppMessage> _messages = [];
+  List<DailyTask> _tasks = [];
+  List<ShopItem> _shopItems = [];
+  List<Announcement> _announcements = [];
+  AppSettings _settings = const AppSettings();
   String? _sessionId;
 
   Future<void> bootstrap() async {
@@ -63,10 +75,39 @@ class Store extends ChangeNotifier {
     _bars = _parseList(map['bars'], DiscussionBar.fromJson);
     _posts = _parseList(map['posts'], Post.fromJson);
     _messages = _parseList(map['messages'], AppMessage.fromJson);
+    _tasks = _parseList(map['tasks'], DailyTask.fromJson);
+    _shopItems = _parseList(map['shopItems'], ShopItem.fromJson);
+    _announcements = _parseList(map['announcements'], Announcement.fromJson);
+    final rawSettings = map['settings'];
+    _settings = rawSettings is Map
+        ? AppSettings.fromJson(Map<String, dynamic>.from(rawSettings))
+        : const AppSettings();
     notifyListeners();
   }
 
   Future<void> refresh() => bootstrap();
+
+  Future<Map<String, String>> fetchCaptcha() async {
+    final data = await _api.get('/api/auth/captcha');
+    if (data is! Map) throw StoreException('验证码获取失败');
+    return {
+      'token': data['token'] as String? ?? '',
+      'question': data['question'] as String? ?? '',
+    };
+  }
+
+  List<DailyTask> get tasks => List.unmodifiable(_tasks);
+  List<ShopItem> get shopItems => List.unmodifiable(_shopItems);
+  List<Announcement> get announcements => List.unmodifiable(_announcements);
+  AppSettings get settings => _settings;
+  String get aboutText => _settings.aboutText.isEmpty
+      ? '乌市职专墙是面向校园的互助社区。'
+      : _settings.aboutText;
+  String get version => _settings.version;
+  List<Announcement> get pendingImportantAnnouncements =>
+      _announcements.where((a) => a.important && !a.read).toList();
+  Announcement? get latestAnnouncement =>
+      _announcements.isEmpty ? null : _announcements.first;
 
   List<T> _parseList<T>(dynamic raw, T Function(Map<String, dynamic>) builder) {
     if (raw is! List) return <T>[];
@@ -112,13 +153,22 @@ class Store extends ChangeNotifier {
     }).length;
   }
 
+  int memberCount(String barId) {
+    return _posts
+        .where((p) => !p.deleted && p.barId == barId)
+        .map((p) => p.authorId)
+        .toSet()
+        .length;
+  }
+
+  List<ShopItem> ownedItems(String type) =>
+      _shopItems.where((item) => item.type == type && item.owned).toList();
+
   Future<DiscussionBar> addBar({
-    required String module,
     required String name,
     String? desc,
   }) async {
     final data = await _api.post('/api/admin/bars', {
-      'module': module,
       'name': name,
       'desc': desc ?? '',
     });
@@ -130,12 +180,10 @@ class Store extends ChangeNotifier {
 
   Future<void> updateBar(
     String id, {
-    required String module,
     required String name,
     String? desc,
   }) async {
     final data = await _api.patch('/api/admin/bars/$id', {
-      'module': module,
       'name': name,
       'desc': desc ?? '',
     });
@@ -187,11 +235,21 @@ class Store extends ChangeNotifier {
     required String username,
     required String password,
     required String nickname,
+    required String realName,
+    required String className,
+    required bool showProfile,
+    required String captchaToken,
+    required String captchaAnswer,
   }) async {
     final data = await _api.post('/api/auth/register', {
       'username': username,
       'password': password,
       'nickname': nickname,
+      'realName': realName,
+      'className': className,
+      'showProfile': showProfile,
+      'captchaToken': captchaToken,
+      'captchaAnswer': captchaAnswer,
     });
     final map = Map<String, dynamic>.from(data as Map);
     await _api.setToken(map['token'] as String);
@@ -213,6 +271,10 @@ class Store extends ChangeNotifier {
     _bars = [];
     _posts = [];
     _messages = [];
+    _tasks = [];
+    _shopItems = [];
+    _announcements = [];
+    _settings = const AppSettings();
     notifyListeners();
   }
 
@@ -357,6 +419,135 @@ class Store extends ChangeNotifier {
     } else {
       _posts.insert(0, post);
     }
+  }
+
+  Future<void> updateProfile({
+    required String nickname,
+    required String realName,
+    required String className,
+    required String bio,
+    required bool showProfile,
+    required int avatar,
+    required String equippedFrameId,
+    required String equippedColorId,
+    required String title,
+  }) async {
+    final data = await _api.patch('/api/me/profile', {
+      'nickname': nickname,
+      'realName': realName,
+      'className': className,
+      'bio': bio,
+      'showProfile': showProfile,
+      'avatar': avatar,
+      'equippedFrameId': equippedFrameId,
+      'equippedColorId': equippedColorId,
+      'title': title,
+    });
+    _applyUserPayload(data);
+  }
+
+  Future<void> buyItem(String itemId) async {
+    final data = await _api.post('/api/shop/buy', {'itemId': itemId});
+    _applyUserPayload(data);
+  }
+
+  Future<void> claimTask(String taskId) async {
+    final data = await _api.post('/api/tasks/$taskId/claim');
+    _applyUserPayload(data);
+  }
+
+  Future<void> grantTitle(String userId, String title) async {
+    final data = await _api.post('/api/admin/users/$userId/title', {'title': title});
+    final user = AppUser.fromJson(Map<String, dynamic>.from(data as Map));
+    final index = _users.indexWhere((u) => u.id == userId);
+    if (index >= 0) _users[index] = user;
+    notifyListeners();
+  }
+
+  Future<void> addTask({
+    required String title,
+    required String description,
+    required String type,
+    required int points,
+  }) async {
+    await _api.post('/api/admin/tasks', {
+      'title': title,
+      'description': description,
+      'type': type,
+      'points': points,
+    });
+    await bootstrap();
+  }
+
+  Future<void> deleteTask(String id) async {
+    await _api.delete('/api/admin/tasks/$id');
+    await bootstrap();
+  }
+
+  Future<void> addAnnouncement({
+    required String title,
+    required String content,
+    required bool important,
+  }) async {
+    await _api.post('/api/admin/announcements', {
+      'title': title,
+      'content': content,
+      'important': important,
+    });
+    await bootstrap();
+  }
+
+  Future<void> deleteAnnouncement(String id) async {
+    await _api.delete('/api/admin/announcements/$id');
+    await bootstrap();
+  }
+
+  Future<void> updateSettings(String aboutText) async {
+    final data = await _api.patch('/api/admin/settings', {'aboutText': aboutText});
+    if (data is Map) {
+      _settings = AppSettings.fromJson(Map<String, dynamic>.from(data));
+      notifyListeners();
+    }
+  }
+
+  Future<void> markAnnouncementRead(String id) async {
+    await _api.post('/api/announcements/$id/read');
+    final index = _announcements.indexWhere((a) => a.id == id);
+    if (index >= 0) {
+      final old = _announcements[index];
+      _announcements[index] = Announcement(
+        id: old.id,
+        title: old.title,
+        content: old.content,
+        important: old.important,
+        read: true,
+        createdAt: old.createdAt,
+      );
+    }
+    notifyListeners();
+  }
+
+  void _applyUserPayload(dynamic data) {
+    if (data is! Map) return;
+    final map = Map<String, dynamic>.from(data);
+    final rawUser = map['user'];
+    if (rawUser is Map) {
+      final user = AppUser.fromJson(Map<String, dynamic>.from(rawUser));
+      final index = _users.indexWhere((u) => u.id == user.id);
+      if (index >= 0) {
+        _users[index] = user;
+      } else {
+        _users.add(user);
+      }
+      _sessionId = user.id;
+    }
+    if (map['tasks'] != null) {
+      _tasks = _parseList(map['tasks'], DailyTask.fromJson);
+    }
+    if (map['shopItems'] != null) {
+      _shopItems = _parseList(map['shopItems'], ShopItem.fromJson);
+    }
+    notifyListeners();
   }
 
   /* ---------------- 消息 ---------------- */

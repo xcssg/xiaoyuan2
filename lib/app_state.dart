@@ -30,6 +30,9 @@ class AppRoute {
   static const search = AppRoute('search');
   static const messages = AppRoute('messages');
   static const me = AppRoute('me');
+  static const editProfile = AppRoute('edit-profile');
+  static const tasks = AppRoute('tasks');
+  static const shop = AppRoute('shop');
 
   static AppRoute bar(String id) => AppRoute('bar', id: id);
   static AppRoute post(String id) => AppRoute('post', id: id);
@@ -95,7 +98,12 @@ class AppState extends ChangeNotifier {
 
   bool get isDark => _darkMode.value;
 
-  void _onStoreChanged() => notifyListeners();
+  void _onStoreChanged() {
+    if (store.current == null && route.name != 'auth') {
+      _stack = <AppRoute>[AppRoute.auth];
+    }
+    notifyListeners();
+  }
 
   void setBarsFilter(String value) {
     barsFilter = value;

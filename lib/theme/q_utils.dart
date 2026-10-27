@@ -106,3 +106,10 @@ int daysSince(int ts) {
   final days = (DateTime.now().millisecondsSinceEpoch - ts) ~/ 86400000;
   return days < 1 ? 1 : days;
 }
+
+
+Color? parseHexColor(String value) {
+  final v = value.trim();
+  if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(v)) return null;
+  return Color(int.parse('FF${v.substring(1)}', radix: 16));
+}

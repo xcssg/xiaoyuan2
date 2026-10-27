@@ -102,7 +102,7 @@ class BarScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 7),
                           QPill(
-                            text: '${store.countPosts(bar.id)} 条帖子 · ${bar.members} 位成员',
+                            text: '${store.countPosts(bar.id)} 条帖子 · ${store.memberCount(bar.id)} 位同学',
                           ),
                         ],
                       ),

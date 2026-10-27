@@ -172,13 +172,17 @@ class _SearchScreenState extends State<SearchScreen> {
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
-                                        color: t.text,
+                                        color: parseHexColor(user.nameColor) ?? t.text,
                                       ),
                                     ),
                                   ),
                                   if (user.isAdmin) ...[
                                     const SizedBox(width: 5),
                                     const QPill(text: '管理员'),
+                                  ],
+                                  if (user.title.isNotEmpty) ...[
+                                    const SizedBox(width: 5),
+                                    QTitleBadge(title: user.title),
                                   ],
                                   if (user.banned) ...[
                                     const SizedBox(width: 5),
@@ -187,6 +191,13 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ],
                               ),
                               const SizedBox(height: 2),
+                              if (user.className.isNotEmpty || user.realName.isNotEmpty)
+                                Text(
+                                  '${user.className}${user.className.isNotEmpty && user.realName.isNotEmpty ? ' · ' : ''}${user.realName}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 10, color: t.text3),
+                                ),
                               Text(
                                 '@${user.username} · ${user.bio}',
                                 maxLines: 1,
