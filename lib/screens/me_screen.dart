@@ -103,7 +103,7 @@ class MeScreen extends StatelessWidget {
                                         children: [
                                           Flexible(
                                             child: Text(
-                                              u.nickname,
+                                              u.nickname.isEmpty ? '@${u.username}' : u.nickname,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
@@ -158,9 +158,15 @@ class MeScreen extends StatelessWidget {
                                 ),
                                 Pressable(
                                   onTap: () => app.navigate(AppRoute.editProfile),
-                                  child: const QPill(
-                                    text: '编辑资料',
-                                    icon: Icons.edit_outlined,
+                                  child: Container(
+                                    width: 34,
+                                    height: 34,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: t.brand.withOpacity(.10),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(Icons.edit_outlined, size: 16, color: t.brand),
                                   ),
                                 ),
                               ],
